@@ -1,0 +1,4 @@
+gurobipy==10.0.3
+logzero==1.7.0
+numpy==1.26.1
+scipy==1.11.3
