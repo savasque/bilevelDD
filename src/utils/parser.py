@@ -1,7 +1,7 @@
 import gurobipy as gp
 import numpy as np
-import scipy
-import logging, logzero
+import pandas as pd
+import logzero
 
 from classes.instance import Instance
 
@@ -9,8 +9,6 @@ from classes.instance import Instance
 class Parser:
     def __init__(self):
         self.logger = logzero.logger
-        if logzero.loglevel == logging.DEBUG:
-            self.logfile("parser_logfile.log")
 
     def load_mps_file(self, file_name):
         file = "instances/{}.mps".format(file_name)
@@ -61,9 +59,14 @@ class Parser:
             "d": np.array([i for i in aux_file["LO"]]),
         }
 
-        self.logger.info("Instance succesfully loaded.")
+        self.logger.info("Instance {} succesfully loaded.".format(file_name))
 
         return Instance(file_name, data)
+
+    def write_results(self, results):
+        results = pd.DataFrame(results)
+        results.set_index("instance", inplace=True)
+        results.to_excel("results/results.xlsx")
 
 if __name__ == "__main__":
     import sys

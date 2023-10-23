@@ -1,6 +1,6 @@
 import gurobipy as gp
 
-def run(instance):
+def run(instance, obj="leader", sense="min"):
     model = gp.Model()
     model.Params.OutputFlag = 0
 
@@ -12,9 +12,12 @@ def run(instance):
     model.addConstrs(gp.quicksum(instance.C[i][j] * x[j] for j in range(instance.Lcols)) + gp.quicksum(instance.D[i][j] * y[j] for j in range(instance.Fcols)) <= instance.b[i] for i in range(instance.Frows))
 
     # Objective function
-    obj = instance.d @ y.values()
-    model.setObjective(obj, sense=gp.GRB.MAXIMIZE)
+    if obj == "leader":
+        obj_func = instance.c_leader @ x.values() + instance.c_follower @ y.values()
+    elif obj == "follower":
+        obj_func = instance.d @ y.values()
+    model.setObjective(obj_func, sense=gp.GRB.MINIMIZE if sense == "min" else gp.GRB.MAXIMIZE)
 
     model.optimize()
-
+    
     return model.ObjVal

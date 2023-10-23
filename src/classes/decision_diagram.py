@@ -3,7 +3,6 @@ class DecisionDiagram:
         self.nodes = dict()
         self.arcs = list()
         self.graph_map = dict()
-        self.last_added_node = None
 
     @property
     def node_count(self):
@@ -13,11 +12,18 @@ class DecisionDiagram:
     def arc_count(self):
         return len(self.arcs)
     
+    @property
+    def width(self):
+        layers = self.nodes["sink"].layer
+        width = 0
+        for layer in range(layers):
+            width = max(width, len([node for node in self.nodes.values() if node.layer == layer]))
+        
+        return width
+    
     def add_node(self, node):
         self.graph_map[node.hash_key] = node.id
         self.nodes[node.id] = node
-        if node.id not in ["root", "sink"]:
-            self.last_added_node = node.id
 
     def add_arc(self, arc):
         self.arcs.append(arc)

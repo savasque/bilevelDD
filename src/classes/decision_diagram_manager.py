@@ -1,18 +1,28 @@
 import logzero
 from collections import deque
+from time import time
 
 from classes.node import Node
 from classes.arc import Arc
 from classes.decision_diagram import DecisionDiagram
 
-from algorithms.compute_big_M import run as compute_big_M
+from algorithms.utils.solve_HPR import run as solve_HPR
 
 
 class DecisionDiagramManager:
     def __init__(self):
         self.logger = logzero.logger
 
-    def compile_diagram(self, diagram, instance, max_width):
+    def compile_diagram(self, diagram, instance, compilation, max_width):
+        '''
+            This method compiles a DD, starting with the follower and continuing with the leader.
+            
+            Args: diagram (class DecisionDiagram), instance (class Instance), max_width (int)
+            Returns: diagram (class DecisionDiagram)
+        '''
+
+        t0 = time()
+        self.logger.info("Compiling diagram. Compilation method: {}".format(compilation))
         var_order = self.ordering_heuristic(instance)
         n = instance.Lcols + instance.Fcols
         player = "follower"
@@ -29,9 +39,10 @@ class DecisionDiagramManager:
         diagram.add_node(sink_node)
 
         # Create dummy arc or 1-width relaxation
-        M = compute_big_M(instance)
+        M = solve_HPR(instance, obj="follower", sense="max") - solve_HPR(instance, obj="follower", sense="min")
         self.logger.debug("Big-M value: {}".format(M))
         dummy_arc = Arc(tail=root_node.id, head=sink_node.id, value=0, cost=M, var_index=-1, player=None)
+        diagram.add_arc(dummy_arc)
 
         # Compute completion bounds for follower constrs
         completion_bounds = [0] * instance.Frows
@@ -39,7 +50,6 @@ class DecisionDiagramManager:
             for j in range(instance.Fcols):
                 completion_bounds[i] += min(0, instance.C[i][j]) + min(0, instance.D[i][j])
         self.logger.debug("Completion bounds for follower layers: {}".format(completion_bounds)) 
-        diagram.add_arc(dummy_arc)
 
         ## Build follower layers ##   
         # Create new nodes and arcs
@@ -86,12 +96,12 @@ class DecisionDiagramManager:
                         diagram.add_node(one_head)
                         next_layer_queue.append(one_head)
                     # Create arc
-                    arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index], var_index=var_index, player=player)
+                    arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index] if player=="follower" else 0, var_index=var_index, player=player)
                     diagram.add_arc(arc)
 
             # Width limit
-            if len(next_layer_queue) > max_width:
-                self.reduce_queue(diagram, next_layer_queue, max_width)
+            if compilation == "restricted" and len(next_layer_queue) > max_width:
+                next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player=player)
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
 
@@ -108,9 +118,18 @@ class DecisionDiagramManager:
         # Clean diagram
         clean_diagram = self.clean_diagram(diagram)
 
+        self.logger.info("Diagram succesfully compiled. Time elapse: {} sec".format(time() - t0))
+
         return clean_diagram
 
     def ordering_heuristic(self, instance):
+        '''
+            This method retrieves a variable ordering.
+
+            Args: instance (class Instance)
+            Returns: dict of sorted indices (dict)
+        '''
+
         order = {"leader": list(), "follower": list()}
 
         # Sum coeffs of the left hand side
@@ -146,7 +165,7 @@ class DecisionDiagramManager:
             for i in range(instance.Frows):
                 node.state[i] += instance.C[i][var_index]
             node.leader_cost = parent_node.leader_cost + instance.c_leader[var_index]
-            # node.follower_cost = parent_node.follower_cost
+            node.follower_cost = parent_node.follower_cost
 
         return node
     
@@ -158,6 +177,13 @@ class DecisionDiagramManager:
         return True
 
     def completion_bounds_sanity_check(self, instance, node):
+        '''
+            This method checks if any infeasible r-t path was compiled.
+
+            Args: instance (class Instance), node (class Node).
+            Returns: None
+        '''
+        
         for i in range(instance.Frows):
             if node.state[i] > instance.b[i]:
                 raise ValueError("Infeasible path. NodeID: {} - State: {}".format(node.id, node.state))
@@ -173,12 +199,13 @@ class DecisionDiagramManager:
         node.leader_cost = min(node.leader_cost, new_node.leader_cost)
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
 
-    def reduce_queue(self, diagram, queue, max_width, player):
+    def reduced_queue(self, diagram, queue, max_width, player):
         if player == "follower":
-            queue.sort(key=lambda x: 0.9 * diagram.nodes[x].follower_cost + 0.1 * diagram.nodes[x].leader_cost)  # Sort nodes in increasing order
+            queue = sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost))  # Sort nodes in increasing order # TODO: remove int
         else:
-            queue.sort(key=lambda x: diagram.nodes[x].leader_cost)  # Sort nodes in increasing order
-        queue = queue[:max_width]
+            queue = sorted(queue, key=lambda x: x.leader_cost)  # Sort nodes in increasing order
+        
+        return deque(queue[:max_width])
 
     def clean_diagram(self, diagram):
         clean_diagram = DecisionDiagram()
@@ -200,6 +227,8 @@ class DecisionDiagramManager:
         for arc in clean_diagram.arcs:
             clean_diagram.nodes[arc.tail].outgoing_arcs.append(arc)
             clean_diagram.nodes[arc.head].incoming_arcs.append(arc)
+
+        self.logger.debug("Diagram succesfully compiled: Node count: {} - Arc count: {}".format(clean_diagram.node_count, clean_diagram.arc_count))
 
         return clean_diagram
 

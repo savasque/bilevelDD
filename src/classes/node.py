@@ -11,3 +11,6 @@ class Node:
     @property
     def hash_key(self):
         return "{}-{}".format(self.state, self.layer)
+    
+    def __repr__(self):
+        return "{}-{}".format(self.id, self.hash_key)
