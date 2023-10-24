@@ -13,7 +13,7 @@ class DecisionDiagramManager:
     def __init__(self):
         self.logger = logzero.logger
 
-    def compile_diagram(self, diagram, instance, compilation, max_width):
+    def compile_diagram(self, diagram, instance, compilation, max_width, ordering_heuristic):
         '''
             This method compiles a DD, starting with the follower and continuing with the leader.
             
@@ -22,8 +22,8 @@ class DecisionDiagramManager:
         '''
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation method: {}".format(compilation))
-        var_order = self.ordering_heuristic(instance)
+        self.logger.info("Compiling diagram. Compilation type: {}.".format(compilation))
+        var_order = self.ordering_heuristic(instance, ordering_heuristic)
         n = instance.Lcols + instance.Fcols
         player = "follower"
 
@@ -39,7 +39,7 @@ class DecisionDiagramManager:
         diagram.add_node(sink_node)
 
         # Create dummy arc or 1-width relaxation
-        M = solve_HPR(instance, obj="follower", sense="max") - solve_HPR(instance, obj="follower", sense="min")
+        M = solve_HPR(instance, obj="follower", sense="max")
         self.logger.debug("Big-M value: {}".format(M))
         dummy_arc = Arc(tail=root_node.id, head=sink_node.id, value=0, cost=M, var_index=-1, player=None)
         diagram.add_arc(dummy_arc)
@@ -117,12 +117,15 @@ class DecisionDiagramManager:
 
         # Clean diagram
         clean_diagram = self.clean_diagram(diagram)
+        clean_diagram.compilation = compilation
+        clean_diagram.max_width = max_width
+        clean_diagram.ordering_heuristic = ordering_heuristic
 
         self.logger.info("Diagram succesfully compiled. Time elapse: {} sec".format(time() - t0))
 
         return clean_diagram
 
-    def ordering_heuristic(self, instance):
+    def ordering_heuristic(self, instance, ordering_heuristic):
         '''
             This method retrieves a variable ordering.
 
@@ -133,17 +136,43 @@ class DecisionDiagramManager:
         order = {"leader": list(), "follower": list()}
 
         # Sum coeffs of the left hand side
-        for j in range(instance.Fcols):
-            coeffs_sum = sum(instance.B[i][j] + instance.D[i][j] for i in range(instance.Frows))
-            order["follower"].append((j, coeffs_sum))
-        for j in range(instance.Lcols):
-            coeffs_sum = sum(instance.A[i][j] + instance.C[i][j] for i in range(instance.Frows))
-            order["leader"].append((j, coeffs_sum))
-        for key in order:  # Sort variables in descending order
-            order[key].sort(key=lambda x: x[1], reverse=True)
-            order[key] = [i[0] for i in order[key]]
+        if ordering_heuristic == "lhs_coeffs":
+            self.logger.debug("Variable ordering heuristic: LHS coeffs")
+            for j in range(instance.Fcols):
+                coeffs_sum = sum(instance.B[i][j] + instance.D[i][j] for i in range(instance.Frows))
+                order["follower"].append((j, coeffs_sum))
+            for j in range(instance.Lcols):
+                coeffs_sum = sum(instance.A[i][j] + instance.C[i][j] for i in range(instance.Frows))
+                order["leader"].append((j, coeffs_sum))
+            for key in order:  
+                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order[key] = [i[0] for i in order[key]]
 
-        self.logger.debug("Variable ordering: {}".format(order))
+        # Leader cost
+        elif ordering_heuristic == "cost_leader":
+            self.logger.debug("Variable ordering heuristic: leader cost")
+            for j in range(instance.Fcols):
+                order["follower"].append((j, instance.c_follower[j]))
+            for j in range(instance.Lcols):
+                order["leader"].append((j, instance.c_leader[j]))
+            for key in order: 
+                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order[key] = [i[0] for i in order[key]]
+
+            self.logger.debug("Variable ordering: {}".format(order))
+
+        # Leader and follower costs
+        elif ordering_heuristic == "cost_competitive":
+            self.logger.debug("Variable ordering heuristic: leader and follower costs")
+            for j in range(instance.Fcols):
+                order["follower"].append((j, instance.d[j]))
+            for j in range(instance.Lcols):
+                order["leader"].append((j, instance.c_leader[j]))
+            for key in order:
+                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order[key] = [i[0] for i in order[key]]
+
+            self.logger.debug("Variable ordering: {}".format(order))
 
         return order
     
@@ -192,7 +221,7 @@ class DecisionDiagramManager:
         for i in range(instance.Frows):
             if player == "follower":
                 completion_bounds[i] -= min(0, instance.D[i][var_index])
-            else:
+            elif player == "leader":
                 completion_bounds[i] -= min(0, instance.C[i][var_index])
 
     def update_costs(self, node, new_node):
@@ -201,9 +230,9 @@ class DecisionDiagramManager:
 
     def reduced_queue(self, diagram, queue, max_width, player):
         if player == "follower":
-            queue = sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost))  # Sort nodes in increasing order # TODO: remove int
+            queue = sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost))  # Sort nodes in ascending order # TODO: remove int
         else:
-            queue = sorted(queue, key=lambda x: x.leader_cost)  # Sort nodes in increasing order
+            queue = sorted(queue, key=lambda x: x.leader_cost)  # Sort nodes in ascending order
         
         return deque(queue[:max_width])
 
@@ -228,7 +257,7 @@ class DecisionDiagramManager:
             clean_diagram.nodes[arc.tail].outgoing_arcs.append(arc)
             clean_diagram.nodes[arc.head].incoming_arcs.append(arc)
 
-        self.logger.debug("Diagram succesfully compiled: Node count: {} - Arc count: {}".format(clean_diagram.node_count, clean_diagram.arc_count))
+        self.logger.debug("Diagram succesfully compiled: Node count: {} - Arc count: {} - Width: {}".format(clean_diagram.node_count + 2, clean_diagram.arc_count, clean_diagram.width))
 
         return clean_diagram
 

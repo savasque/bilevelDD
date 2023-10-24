@@ -29,10 +29,19 @@ def get_model(instance, diagram, time_limit=600):
 
     x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")
-    w = model.addVars([arc.id for arc in arcs], ub=1, name="w")
+    w = model.addVars([arc.id for arc in arcs], vtype=gp.GRB.BINARY, name="w")
     pi = model.addVars([node.id for node in nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
     lamda = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 0], name="lambda")
     beta = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 1], name="beta")
+
+    vars = {
+        "x": x,
+        "y": y,
+        "w": w,
+        "pi": pi,
+        "lambda": lamda,
+        "beta": beta
+    }
 
     # HPR constrs
     model.addConstrs((gp.quicksum(A[i][j] * x[j] for j in range(Lcols)) + gp.quicksum(B[i][j] * y[j] for j in range(Fcols)) <= a[i] for i in range(Lrows)), name="LeaderHPR")
@@ -65,4 +74,4 @@ def get_model(instance, diagram, time_limit=600):
     obj = gp.quicksum(c_leader[j] * x[j] for j in range(Lcols)) + gp.quicksum(c_follower[j] * y[j] for j in range(Fcols))
     model.setObjective(obj, sense=gp.GRB.MINIMIZE)
 
-    return model, {"x": x, "y": y}
+    return model, vars

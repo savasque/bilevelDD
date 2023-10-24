@@ -3,6 +3,9 @@ class DecisionDiagram:
         self.nodes = dict()
         self.arcs = list()
         self.graph_map = dict()
+        self.compilation = None
+        self.max_width = None
+        self.ordering_heuristic = None
 
     @property
     def node_count(self):

@@ -2,6 +2,7 @@ import gurobipy as gp
 import numpy as np
 import pandas as pd
 import logzero
+from datetime import datetime
 
 from classes.instance import Instance
 
@@ -66,7 +67,8 @@ class Parser:
     def write_results(self, results):
         results = pd.DataFrame(results)
         results.set_index("instance", inplace=True)
-        results.to_excel("results/results.xlsx")
+        results.to_excel("results/{}.xlsx".format(datetime.now()))
+
 
 if __name__ == "__main__":
     import sys
