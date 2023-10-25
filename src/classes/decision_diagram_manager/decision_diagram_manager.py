@@ -12,8 +12,15 @@ from algorithms.utils.solve_HPR import run as solve_HPR
 class DecisionDiagramManager:
     def __init__(self):
         self.logger = logzero.logger
+        self.compilation_methods = {
+            "follower_leader": self.compile_diagram_FL,
+            "leader_follower": self.compile_diagram_LF
+        }
 
-    def compile_diagram(self, diagram, instance, compilation, max_width, ordering_heuristic):
+    def compile_diagram(self, diagram, instance, compilation, compilation_method, max_width, ordering_heuristic):
+        return self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
+
+    def compile_diagram_FL(self, diagram, instance, compilation, max_width, ordering_heuristic):
         '''
             This method compiles a DD, starting with the follower and continuing with the leader.
             
@@ -22,8 +29,9 @@ class DecisionDiagramManager:
         '''
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation type: {}.".format(compilation))
+        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader".format(compilation))
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
+        self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
         player = "follower"
 
@@ -49,9 +57,9 @@ class DecisionDiagramManager:
         for i in range(instance.Frows):
             for j in range(instance.Fcols):
                 completion_bounds[i] += min(0, instance.C[i][j]) + min(0, instance.D[i][j])
-        self.logger.debug("Completion bounds for follower layers: {}".format(completion_bounds)) 
+        self.logger.debug("Completion bounds for follower constrs: {}".format(completion_bounds)) 
 
-        ## Build follower layers ##   
+        ## Build layers ##   
         # Create new nodes and arcs
         for layer in range(n):
             if layer >= instance.Fcols:
@@ -120,6 +128,125 @@ class DecisionDiagramManager:
         clean_diagram.compilation = compilation
         clean_diagram.max_width = max_width
         clean_diagram.ordering_heuristic = ordering_heuristic
+        clean_diagram.compilation_method = "follower-leader"
+
+        self.logger.info("Diagram succesfully compiled. Time elapse: {} sec".format(time() - t0))
+
+        return clean_diagram
+
+    def compile_diagram_LF(self, diagram, instance, compilation, max_width, ordering_heuristic):
+        '''
+            This method compiles a DD, starting with the leader and continuing with the follower.
+            
+            Args: diagram (class DecisionDiagram), instance (class Instance), max_width (int)
+            Returns: diagram (class DecisionDiagram)
+        '''
+
+        t0 = time()
+        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: leader-follower".format(compilation))
+        var_order = self.ordering_heuristic(instance, ordering_heuristic)
+        self.logger.debug("Variable ordering: {}".format(var_order))
+        n = instance.Lcols + instance.Fcols
+        player = "leader"
+
+        # Queues of nodes
+        current_layer_queue = deque()
+        next_layer_queue = deque()
+
+        # Create root and sink nodes
+        root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
+        diagram.add_node(root_node)
+        current_layer_queue.append(root_node)
+        sink_node = Node(id="sink", layer=n)
+        diagram.add_node(sink_node)
+
+        # Create dummy arc or 1-width relaxation
+        M = solve_HPR(instance, obj="follower", sense="max")
+        self.logger.debug("Big-M value: {}".format(M))
+        dummy_arc = Arc(tail=root_node.id, head=sink_node.id, value=0, cost=M, var_index=-1, player=None)
+        diagram.add_arc(dummy_arc)
+
+        # Compute completion bounds for follower constrs
+        completion_bounds = [0] * instance.Frows
+        for i in range(instance.Frows):
+            for j in range(instance.Fcols):
+                completion_bounds[i] += min(0, instance.C[i][j]) + min(0, instance.D[i][j])
+        self.logger.debug("Completion bounds for follower constrs: {}".format(completion_bounds)) 
+
+        ## Build layers 
+        # Create new nodes and arcs
+        for layer in range(n):
+            if layer >= instance.Lcols:
+                player = "follower"
+                var_index = var_order[player][layer - instance.Lcols]
+            else:
+                var_index = var_order[player][layer]
+            self.logger.debug("{} layer: {} - Variable index: {} - Queue size: {}".format(player, layer, var_index, len(current_layer_queue)))
+            # Update completion bound
+            self.update_completions_bounds(instance, completion_bounds, var_index, player)
+            while len(current_layer_queue) and diagram.node_count < 1e6:
+                node = current_layer_queue.popleft()
+                zero_head = self.create_zero_node(layer + 1, node)
+                one_head = self.create_one_node(instance, layer + 1, var_index, node, player=player)
+
+                # Zero head
+                if self.check_completion_bounds(instance, completion_bounds, zero_head):
+                    zero_head.id = diagram.node_count
+                    # Check if node was already created
+                    if zero_head.hash_key in diagram.graph_map:
+                        found_node = diagram.nodes[diagram.graph_map[zero_head.hash_key]]
+                        if player == "follower":
+                            self.update_costs(node=found_node, new_node=zero_head)
+                        zero_head = found_node
+                    else:
+                        diagram.add_node(zero_head)
+                        next_layer_queue.append(zero_head)
+                    # Create arc
+                    arc = Arc(tail=node.id, head=zero_head.id, value=0, cost=0, var_index=var_index, player=player)
+                    diagram.add_arc(arc)
+                else: 
+                    a = None
+                
+                # One head
+                if self.check_completion_bounds(instance, completion_bounds, one_head):
+                    one_head.id = diagram.node_count
+                    # Check if node was already created
+                    if one_head.hash_key in diagram.graph_map:
+                        found_node = diagram.nodes[diagram.graph_map[one_head.hash_key]]
+                        if player == "follower":
+                            self.update_costs(node=found_node, new_node=one_head)
+                        one_head = found_node
+                    else:
+                        diagram.add_node(one_head)
+                        next_layer_queue.append(one_head)
+                    # Create arc
+                    arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index] if player=="follower" else 0, var_index=var_index, player=player)
+                    diagram.add_arc(arc)
+                else: 
+                    a = None
+
+            # Width limit
+            if compilation == "restricted" and len(next_layer_queue) > max_width:
+                next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player=player)
+            current_layer_queue = next_layer_queue
+            next_layer_queue = deque()
+
+        # Add artificial zero arcs to the sink node
+        while len(current_layer_queue):
+            node = current_layer_queue.popleft()
+            self.completion_bounds_sanity_check(instance, node)
+            arc = Arc(tail=node.id, head=sink_node.id, value=0, cost=0, var_index=-1, player=None)
+            diagram.add_arc(arc)
+
+        # Update in/outgoing arcs
+        diagram.update_in_outgoing_arcs()
+
+        # Clean diagram
+        clean_diagram = self.clean_diagram(diagram)
+        clean_diagram.compilation = compilation
+        clean_diagram.max_width = max_width
+        clean_diagram.ordering_heuristic = ordering_heuristic
+        clean_diagram.compilation_method = "leader-follower"
 
         self.logger.info("Diagram succesfully compiled. Time elapse: {} sec".format(time() - t0))
 
@@ -159,8 +286,6 @@ class DecisionDiagramManager:
                 order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
                 order[key] = [i[0] for i in order[key]]
 
-            self.logger.debug("Variable ordering: {}".format(order))
-
         # Leader and follower costs
         elif ordering_heuristic == "cost_competitive":
             self.logger.debug("Variable ordering heuristic: leader and follower costs")
@@ -172,7 +297,16 @@ class DecisionDiagramManager:
                 order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
                 order[key] = [i[0] for i in order[key]]
 
-            self.logger.debug("Variable ordering: {}".format(order))
+        # Leader feasibility
+        elif ordering_heuristic == "leader_feasibility":
+            self.logger.debug("Variable ordering heuristic: leader feasibility")
+            for j in range(instance.Fcols):
+                order["follower"].append((j, sum([-instance.b[i] + instance.D[i][j] for i in range(instance.Frows)])))
+            for j in range(instance.Lcols):
+                order["leader"].append((j, instance.c_leader[j]))
+            for key in order:
+                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order[key] = [i[0] for i in order[key]]
 
         return order
     

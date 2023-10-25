@@ -6,6 +6,7 @@ class DecisionDiagram:
         self.compilation = None
         self.max_width = None
         self.ordering_heuristic = None
+        self.compilation_methos = None
 
     @property
     def node_count(self):

@@ -12,6 +12,7 @@ class AlgorithmsManager:
         model, vars = get_model(instance, diagram, time_limit)
         model.optimize()
         self.logger.info("DD reformulation solved succesfully. Time elapsed: {} sec.".format(model.runtime))
+        self.logger.debug("LB: {}, MIPGap: {}".format(model.objBound, model.MIPGap))
         self.logger.info("Solving DD refomulation relaxation.".format(time_limit))
         relaxed_model = model.relax()
         relaxed_model.Params.OutputFlag = 0
@@ -28,6 +29,7 @@ class AlgorithmsManager:
         data = {
             "approach": approach,
             "compilation": diagram.compilation,
+            "compilation_method": diagram.compilation_method,
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
             "time_limit": model.Params.timeLimit,

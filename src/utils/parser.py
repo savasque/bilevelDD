@@ -61,6 +61,7 @@ class Parser:
         }
 
         self.logger.info("Instance {} succesfully loaded.".format(file_name))
+        self.logger.debug(data)
 
         return Instance(file_name, data)
 
