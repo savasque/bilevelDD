@@ -1,6 +1,6 @@
 class Arc:
     def __init__(self, tail, head, value, cost, var_index, player):
-        self.id = "t:{}-h:{}-v:{}".format(tail, head, value)
+        self.id = "{}-{}-{}".format(tail, head, value)
         self.tail = tail
         self.head = head
         self.value = value

@@ -23,7 +23,13 @@ class AlgorithmsManager:
         results["width"] = diagram.width
         self.logger.debug("Results: {}".format(results))
 
-        return results
+        vars = {
+            "x": [i.X for i in vars["x"].values()],
+            "y": [i.X for i in vars["y"].values()],
+            "w": {key: value.X for key, value in vars["w"].items()}
+        }
+
+        return results, vars
 
     def format_result(self, model, diagram, approach, relaxed_model=None):
         data = {

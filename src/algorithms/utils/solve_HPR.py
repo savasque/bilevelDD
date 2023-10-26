@@ -19,5 +19,10 @@ def run(instance, obj="leader", sense="min"):
     model.setObjective(obj_func, sense=gp.GRB.MINIMIZE if sense == "min" else gp.GRB.MAXIMIZE)
 
     model.optimize()
+
+    vars = {
+        "x": [x[i].X for i in x],
+        "y": [y[i].X for i in y]
+    }
     
-    return model.ObjVal
+    return model.ObjVal, vars

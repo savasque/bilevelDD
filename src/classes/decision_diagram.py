@@ -7,6 +7,7 @@ class DecisionDiagram:
         self.max_width = None
         self.ordering_heuristic = None
         self.compilation_methos = None
+        self.var_order = None
 
     @property
     def node_count(self):
@@ -41,3 +42,18 @@ class DecisionDiagram:
         for node in self.nodes.values():
             node.incoming_arcs = list()
             node.outgoing_arcs = list()
+
+    def is_solution_encoded(self, x, y):
+        nodes = [self.nodes["root"]]
+        while len(nodes):
+            node = nodes.pop()
+            if node.layer == len(x) + len(y):
+                return True
+            for arc in node.outgoing_arcs:  # Only for follower-leader compilation
+                if (arc.player == "follower" and arc.value == y[self.var_order["follower"][node.layer]])\
+                or (arc.player == "leader" and arc.value == x[self.var_order["leader"][node.layer - len(y)]]):
+                    nodes.append(self.nodes[arc.head])
+            if not nodes:
+                a = None
+        
+        return False

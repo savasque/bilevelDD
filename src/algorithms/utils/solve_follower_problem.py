@@ -13,4 +13,4 @@ def run(instance, x):
 
     model.optimize()
 
-    return "Sol: {} - ObjVal: {}".format([y[i].X for i in y], model.ObjVal)
+    return model.objVal, [y[i].X for i in y]
