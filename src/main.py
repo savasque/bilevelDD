@@ -8,15 +8,16 @@ from decision_diagram_manager.decision_diagram_manager import DecisionDiagramMan
 from algorithms.algorithms_manager import AlgorithmsManager
 from algorithms.utils.solve_HPR import run as solve_HPR
 from algorithms.utils.solve_follower_problem import run as solve_follower_problem
+from algorithms.utils.solve_aux_problem import run as solve_aux_problem
 
 ## Parameters
 # General
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "INFO"
 # Compilation
-COMPILATION = "complete"
+COMPILATION = "restricted"
 COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "follower_leader_Y"]
 MAX_WIDTH = [10000]
-ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
+ORDERING_HEURISTIC = ["leader_feasibility"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 600
 
@@ -30,7 +31,7 @@ def run():
     algorithms_manager = AlgorithmsManager()
 
     # Simulation
-    instances = ["20_5_25_1"] #["20_{}_25_1".format(i) for i in [1, 2, 3, 5]]
+    instances = ["30_3_25_1"] #["{}_{}_25_1".format(vars, constrs) for vars in [30] for constrs in [1, 2, 3, 5]]
     results = list()
     for instance_name in instances:
         for max_width in MAX_WIDTH:
@@ -40,13 +41,15 @@ def run():
                     instance = parser.build_instance(instance_name) 
 
                     if compilation_method == "follower_leader_Y":
+                        # Initialize set of y's for Y-compilation
                         lb_tracking = list()
-                        # Set of y's for Y-compilation
                         runtime = 0
                         _, vars = solve_HPR(instance, obj="leader", sense="min")
                         _, y = solve_follower_problem(instance, vars["x"])
+                        _, y = solve_aux_problem(instance, vars["x"], instance.d @ y)
+                        x = vars["x"]
                         Y = [y]
-                        while runtime <= 3600:
+                        while runtime <= SOLVER_TIME_LIMIT:
                             # Compile diagram
                             diagram = DecisionDiagram()
                             diagram_manager = DecisionDiagramManager()
@@ -56,17 +59,19 @@ def run():
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
                             # Algorithm
-                            result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT)
-                            runtime += result["runtime"]
+                            result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT, incumbent={"x": x, "y": Y[-1]})
+                            runtime += result["total_runtime"]
                             lb_tracking.append(result["lower_bound"])
                             _, y = solve_follower_problem(instance, solution["x"])
+                            _, y = solve_aux_problem(instance, solution["x"], instance.d @ y)
 
                             # Collect y
                             if y in Y:
                                 break
                             Y.append(y)
+                            x = solution["x"]
 
-                        result["runtime"] = runtime
+                        result["total_runtime"] = runtime
                         result["lower_bound_tracking"] = lb_tracking
                     else:
                         diagram = DecisionDiagram()

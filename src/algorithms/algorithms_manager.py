@@ -7,9 +7,9 @@ class AlgorithmsManager:
     def __init__(self):
         self.logger = logzero.logger
     
-    def run_DD_reformulation(self, instance, diagram, time_limit):
+    def run_DD_reformulation(self, instance, diagram, time_limit, incumbent=dict()):
         self.logger.info("Solving DD refomulation. Time limit: {} sec".format(time_limit))
-        model, vars = get_model(instance, diagram, time_limit)
+        model, vars = get_model(instance, diagram, time_limit, incumbent)
         model.optimize()
         self.logger.info("DD reformulation solved succesfully. Time elapsed: {} sec.".format(model.runtime))
         self.logger.debug("LB: {}, MIPGap: {}".format(model.objBound, model.MIPGap))
@@ -43,7 +43,10 @@ class AlgorithmsManager:
             "lower_bound": model.objBound,
             "MIPGap": model.MIPGap,
             "relaxation_objval": relaxed_model.objVal,
-            "runtime": model.runtime,
+            "total_runtime": diagram.compilation_runtime + diagram.reduce_algorithm_runtime + model.runtime,
+            "compilation_runtime": diagram.compilation_runtime,
+            "reduce_algorithm_runtime": diagram.reduce_algorithm_runtime,
+            "model_runtime": model.runtime,
             "num_vars": model.numVars,
             "num_constrs": model.numConstrs
         }

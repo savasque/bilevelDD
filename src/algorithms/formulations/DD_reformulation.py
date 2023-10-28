@@ -2,7 +2,7 @@ import gurobipy as gp
 
 from algorithms.utils.solve_HPR import run as solve_HPR
 
-def get_model(instance, diagram, time_limit=600):
+def get_model(instance, diagram, time_limit, incumbent):
     Lcols = instance.Lcols
     Lrows = instance.Lrows
     Fcols = instance.Lcols
@@ -33,6 +33,12 @@ def get_model(instance, diagram, time_limit=600):
     pi = model.addVars([node.id for node in nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
     lamda = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 0], name="lambda")
     beta = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 1], name="beta")
+
+    if incumbent:
+        for j in range(Lcols):
+            x[j].start = incumbent["x"][j]
+        for j in range(Fcols):
+            y[j].start = incumbent["y"][j]
 
     vars = {
         "x": x,

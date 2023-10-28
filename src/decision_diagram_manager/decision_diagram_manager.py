@@ -43,6 +43,12 @@ class DecisionDiagramManager:
         n = instance.Lcols + instance.Fcols
         player = "follower"
 
+        diagram.max_width = max_width
+        diagram.compilation = compilation
+        diagram.compilation_method = "follower_leader"
+        diagram.ordering_heuristic = ordering_heuristic
+        diagram.var_order = var_order
+
         # Queues of nodes
         current_layer_queue = deque()
         next_layer_queue = deque()
@@ -117,7 +123,7 @@ class DecisionDiagramManager:
                     diagram.add_arc(arc)
 
             if diagram.node_count >= 1e6:
-                self.logger.warning("Diagram surpassed max node count: {}".format(diagram.node_count))
+                raise ValueError("Diagram surpassed max node count: {:e}".format(diagram.node_count))
 
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
@@ -160,6 +166,12 @@ class DecisionDiagramManager:
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
         player = "leader"
+
+        diagram.max_width = max_width
+        diagram.compilation = compilation
+        diagram.compilation_method = "leader_follower"
+        diagram.ordering_heuristic = ordering_heuristic
+        diagram.var_order = var_order
 
         # Queues of nodes
         current_layer_queue = deque()
@@ -234,6 +246,9 @@ class DecisionDiagramManager:
                     arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index] if player=="follower" else 0, var_index=var_index, player=player)
                     diagram.add_arc(arc)
 
+            if diagram.node_count >= 1e6:
+                raise ValueError("Diagram surpassed max node count: {:e}".format(diagram.node_count))
+
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
                 next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player=player)
@@ -275,6 +290,12 @@ class DecisionDiagramManager:
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
+
+        diagram.max_width = max_width
+        diagram.compilation = compilation
+        diagram.compilation_method = "follower_leader_Y"
+        diagram.ordering_heuristic = ordering_heuristic
+        diagram.var_order = var_order
 
         # Queues of nodes
         current_layer_queue = deque()
@@ -409,6 +430,9 @@ class DecisionDiagramManager:
                     # Create arc
                     arc = Arc(tail=node.id, head=one_head.id, value=1, cost=0, var_index=var_index, player="leader")
                     diagram.add_arc(arc)
+
+            if diagram.node_count >= 1e6:
+                raise ValueError("Diagram surpassed max node count: {:e}".format(diagram.node_count))
 
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
