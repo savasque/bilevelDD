@@ -20,17 +20,21 @@ class DecisionDiagramManager:
 
     def compile_diagram(self, diagram, instance, compilation, compilation_method, max_width, ordering_heuristic, Y=None):
         if Y:
-            return self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic, Y)
+            diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic, Y)
         else:
-            return self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
+            diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
+
+        self.reduce_diagram(diagram)
+        
+        return diagram
 
     def compile_diagram_FL(self, diagram, instance, compilation, max_width, ordering_heuristic):
-        '''
+        """
             This method compiles a DD, starting with the follower and continuing with the leader.
             
             Args: diagram (class DecisionDiagram), instance (class Instance), max_width (int)
             Returns: diagram (class DecisionDiagram)
-        '''
+        """
 
         t0 = time()
         self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader".format(compilation))
@@ -47,7 +51,7 @@ class DecisionDiagramManager:
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
         diagram.add_node(root_node)
         current_layer_queue.append(root_node)
-        sink_node = Node(id="sink", layer=n)
+        sink_node = Node(id="sink", layer=n + 1)
         diagram.add_node(sink_node)
 
         # Create dummy arc or 1-width relaxation
@@ -66,6 +70,7 @@ class DecisionDiagramManager:
         ## Build layers ##   
         # Create new nodes and arcs
         for layer in range(n):
+            # Choose player
             if layer >= instance.Fcols:
                 player = "leader"
                 var_index = var_order[player][layer - instance.Fcols]
@@ -74,7 +79,7 @@ class DecisionDiagramManager:
             self.logger.debug("{} layer: {} - Variable index: {} - Queue size: {}".format(player, layer, var_index, len(current_layer_queue)))
             # Update completion bound
             self.update_completions_bounds(instance, completion_bounds, var_index, player)
-            while len(current_layer_queue) and diagram.node_count < 1e6:
+            while len(current_layer_queue) and diagram.node_count < 1e8:
                 node = current_layer_queue.popleft()
                 zero_head = self.create_zero_node(layer + 1, node)
                 one_head = self.create_one_node(instance, layer + 1, var_index, node, player=player)
@@ -111,6 +116,9 @@ class DecisionDiagramManager:
                     arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index] if player=="follower" else 0, var_index=var_index, player=player)
                     diagram.add_arc(arc)
 
+            if diagram.node_count >= 1e6:
+                self.logger.warning("Diagram surpassed max node count: {}".format(diagram.node_count))
+
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
                 next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player=player)
@@ -129,11 +137,8 @@ class DecisionDiagramManager:
 
         # Clean diagram
         clean_diagram = self.clean_diagram(diagram)
-        clean_diagram.compilation = compilation
-        clean_diagram.max_width = max_width
-        clean_diagram.ordering_heuristic = ordering_heuristic
-        clean_diagram.compilation_method = "follower-leader"
-        clean_diagram.var_order = var_order
+
+        clean_diagram.compilation_runtime = time() - t0
 
         self.logger.info("Diagram succesfully compiled. Time elapsed: {} - Node count: {} - Arc count: {} - Width: {}".format(
             time() - t0, clean_diagram.node_count + 2, clean_diagram.arc_count, clean_diagram.width
@@ -142,12 +147,12 @@ class DecisionDiagramManager:
         return clean_diagram
 
     def compile_diagram_LF(self, diagram, instance, compilation, max_width, ordering_heuristic):
-        '''
+        """
             This method compiles a DD, starting with the leader and continuing with the follower.
             
             Args: diagram (class DecisionDiagram), instance (class Instance), max_width (int)
             Returns: diagram (class DecisionDiagram)
-        '''
+        """
 
         t0 = time()
         self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: leader-follower".format(compilation))
@@ -164,7 +169,7 @@ class DecisionDiagramManager:
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
         diagram.add_node(root_node)
         current_layer_queue.append(root_node)
-        sink_node = Node(id="sink", layer=n)
+        sink_node = Node(id="sink", layer=n + 1)
         diagram.add_node(sink_node)
 
         # Create dummy arc or 1-width relaxation
@@ -183,6 +188,7 @@ class DecisionDiagramManager:
         ## Build layers 
         # Create new nodes and arcs
         for layer in range(n):
+            # Choose player
             if layer >= instance.Lcols:
                 player = "follower"
                 var_index = var_order[player][layer - instance.Lcols]
@@ -211,8 +217,6 @@ class DecisionDiagramManager:
                     # Create arc
                     arc = Arc(tail=node.id, head=zero_head.id, value=0, cost=0, var_index=var_index, player=player)
                     diagram.add_arc(arc)
-                else: 
-                    a = None
                 
                 # One head
                 if self.check_completion_bounds(instance, completion_bounds, one_head):
@@ -229,8 +233,6 @@ class DecisionDiagramManager:
                     # Create arc
                     arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index] if player=="follower" else 0, var_index=var_index, player=player)
                     diagram.add_arc(arc)
-                else: 
-                    a = None
 
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
@@ -250,11 +252,8 @@ class DecisionDiagramManager:
 
         # Clean diagram
         clean_diagram = self.clean_diagram(diagram)
-        clean_diagram.compilation = compilation
-        clean_diagram.max_width = max_width
-        clean_diagram.ordering_heuristic = ordering_heuristic
-        clean_diagram.compilation_method = "leader-follower"
-        clean_diagram.var_order = var_order
+
+        clean_diagram.compilation_runtime = time() - t0
 
         self.logger.info("Diagram succesfully compiled. Time elapsed: {} - Node count: {} - Arc count: {} - Width: {}".format(
             time() - t0, clean_diagram.node_count + 2, clean_diagram.arc_count, clean_diagram.width
@@ -263,13 +262,13 @@ class DecisionDiagramManager:
         return clean_diagram
 
     def compile_diagram_Y(self, diagram, instance, compilation, max_width, ordering_heuristic, Y):
-        '''
+        """
             This method compiles a DD, starting with the follower and continuing with the leader. 
             It only compiles y's belonging to set Y.
             
             Args: diagram (class DecisionDiagram), instance (class Instance), Y (list), max_width (int)
             Returns: diagram (class DecisionDiagram)
-        '''
+        """
 
         t0 = time()
         self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader-Y".format(compilation))
@@ -285,7 +284,7 @@ class DecisionDiagramManager:
         # Create root and sink nodes
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
         diagram.add_node(root_node)
-        sink_node = Node(id="sink", layer=n)
+        sink_node = Node(id="sink", layer=n + 1)
         diagram.add_node(sink_node)
 
         # Create dummy arc or 1-width relaxation
@@ -429,11 +428,8 @@ class DecisionDiagramManager:
 
         # Clean diagram
         clean_diagram = self.clean_diagram(diagram)
-        clean_diagram.compilation = compilation
-        clean_diagram.max_width = max_width
-        clean_diagram.ordering_heuristic = ordering_heuristic
-        clean_diagram.compilation_method = "follower-leader"
-        clean_diagram.var_order = var_order
+
+        clean_diagram.compilation_runtime = time() - t0
 
         self.logger.info("Diagram succesfully compiled. Time elapsed: {} - Node count: {} - Arc count: {} - Width: {}".format(
             time() - t0, clean_diagram.node_count + 2, clean_diagram.arc_count, clean_diagram.width
@@ -441,13 +437,75 @@ class DecisionDiagramManager:
 
         return clean_diagram
 
+    def reduce_diagram(self, diagram):
+        """
+            This function executes the reduce algorithm by Bryant (1986).
+
+            Args: diagram (class DecisionDiagram)
+            Returns: None
+        """
+
+        t0 = time()
+        self.logger.info("Executing reduce algorithm")
+
+        # Populate nodes by layers (vlist)
+        v_list = {layer: list() for layer in range(diagram.nodes["sink"].layer + 1)}
+        for node in diagram.nodes.values():
+            v_list[node.layer].append(node)
+
+        # Traverse diagram bottom-up
+        for layer in range(diagram.nodes["sink"].layer + 1)[::-1]:
+            # Create keys for each node in current layer
+            Q = list()
+            for u in v_list[layer]:
+                if u.id == "sink":
+                    Q.append(((0, 0), u))
+                else:
+                    key = [float("inf"), float("inf")]
+                    for arc in u.outgoing_arcs:
+                        if arc.value == 0:
+                            key[0] = arc.head
+                        else:
+                            key[1] = arc.head
+                    Q.append((key, u))
+            Q.sort(key=lambda x: x[0])
+
+            # Merging process
+            old_key = (-1, -1)
+            for idx, (key, u) in enumerate(Q):
+                self.logger.debug("Processing layer {} ({}/{})".format(layer, idx + 1, len(Q)))
+                if key != old_key:
+                    # Node cannot be merged with the previous one
+                    old_key = key
+                    old_node = u
+                else:
+                    # Node can be merged. Take each incoming arc and redirect its head
+                    for in_arc in u.incoming_arcs:
+                        in_arc.head = old_node.id
+                        in_arc._update_id()
+                        old_node.incoming_arcs.append(in_arc)
+                    diagram.remove_node(u)
+            if layer == diagram.nodes["sink"].layer - 1:
+                # Special treatment for sink node
+                diagram.nodes["sink"].incoming_arcs = [arc for arc in diagram.nodes["sink"].incoming_arcs if arc.tail in [old_node.id, "root"]]
+        
+        # Filter arcs
+        diagram.arcs = [arc for arc in diagram.arcs if arc.tail in diagram.nodes and arc.head in diagram.nodes]
+        for node in diagram.nodes.values():
+            node.outgoing_arcs = [arc for arc in node.outgoing_arcs if arc.head in diagram.nodes]
+            node.incoming_arcs = [arc for arc in node.incoming_arcs if arc.tail in diagram.nodes]
+
+        diagram.reduce_algorithm_runtime = time() - t0
+
+        self.logger.info("Diagram succesfully reduced. Time elapsed: {} sec. Nodes: {} - Arcs: {} - Width: {}".format(time() - t0, len(diagram.nodes), len(diagram.arcs), diagram.width))
+
     def ordering_heuristic(self, instance, ordering_heuristic):
-        '''
+        """
             This method retrieves a variable ordering.
 
             Args: instance (class Instance)
             Returns: dict of sorted indices (dict)
-        '''
+        """
 
         order = {"leader": list(), "follower": list()}
 
@@ -534,12 +592,12 @@ class DecisionDiagramManager:
         return True
 
     def completion_bounds_sanity_check(self, instance, node):
-        '''
+        """
             This method checks if any infeasible r-t path was compiled.
 
             Args: instance (class Instance), node (class Node).
             Returns: None
-        '''
+        """
         
         for i in range(instance.Frows):
             if node.state[i] > instance.b[i]:
@@ -565,7 +623,12 @@ class DecisionDiagramManager:
         return deque(queue[:max_width])
 
     def clean_diagram(self, diagram):
+        t0 = time()
+        self.logger.debug("Executing bottom-up recursion to remove unreachable nodes")
+        
         clean_diagram = DecisionDiagram()
+        clean_diagram.inherit_data(diagram)
+
         # Add root and last added node
         root_node = diagram.nodes["root"]
         clean_diagram.add_node(root_node)
@@ -584,6 +647,8 @@ class DecisionDiagramManager:
         for arc in clean_diagram.arcs:
             clean_diagram.nodes[arc.tail].outgoing_arcs.append(arc)
             clean_diagram.nodes[arc.head].incoming_arcs.append(arc)
+
+        self.logger.debug("Process done. Time elapsed: {} sec".format(time() - t0))
 
         return clean_diagram
 

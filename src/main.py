@@ -3,7 +3,7 @@ import logging, logzero
 from utils.parser import Parser
 
 from classes.decision_diagram import DecisionDiagram
-from classes.decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
+from decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
 
 from algorithms.algorithms_manager import AlgorithmsManager
 from algorithms.utils.solve_HPR import run as solve_HPR
@@ -13,10 +13,10 @@ from algorithms.utils.solve_follower_problem import run as solve_follower_proble
 # General
 LOG_LEVEL = "DEBUG"
 # Compilation
-COMPILATION = "restricted"
-COMPILATION_METHOD = ["leader_follower"] #["follower_leader", "leader_follower", "follower_leader_Y"]
-MAX_WIDTH = [128]
-ORDERING_HEURISTIC = ["cost_leader"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
+COMPILATION = "complete"
+COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "follower_leader_Y"]
+MAX_WIDTH = [10000]
+ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 600
 
@@ -46,7 +46,7 @@ def run():
                         _, vars = solve_HPR(instance, obj="leader", sense="min")
                         _, y = solve_follower_problem(instance, vars["x"])
                         Y = [y]
-                        for i in range(3):
+                        while runtime <= 3600:
                             # Compile diagram
                             diagram = DecisionDiagram()
                             diagram_manager = DecisionDiagramManager()
@@ -57,12 +57,14 @@ def run():
                             )
                             # Algorithm
                             result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT)
-                            # Collect y
-                            _, y = solve_follower_problem(instance, solution["x"])
-                            Y.append(y)
-
                             runtime += result["runtime"]
                             lb_tracking.append(result["lower_bound"])
+                            _, y = solve_follower_problem(instance, solution["x"])
+
+                            # Collect y
+                            if y in Y:
+                                break
+                            Y.append(y)
 
                         result["runtime"] = runtime
                         result["lower_bound_tracking"] = lb_tracking

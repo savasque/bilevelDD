@@ -10,3 +10,6 @@ class Arc:
     
     def __repr__(self):
         return self.id
+    
+    def _update_id(self):
+        self.id = "{}-{}-{}".format(self.tail, self.head, self.value)

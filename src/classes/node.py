@@ -14,3 +14,9 @@ class Node:
     
     def __repr__(self):
         return "{}-{}".format(self.id, self.hash_key)
+    
+    def inherit_data(self, node):
+        self.outgoing_arcs = node.outgoing_arcs
+        self.incoming_arcs = node.incoming_arcs
+        self.leader_cost = node.leader_cost
+        self.follower_cost = node.follower_cost
