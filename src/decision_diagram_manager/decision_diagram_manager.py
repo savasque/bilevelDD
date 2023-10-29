@@ -15,12 +15,12 @@ class DecisionDiagramManager:
         self.compilation_methods = {
             "follower_leader": self.compile_diagram_FL,
             "leader_follower": self.compile_diagram_LF,
-            "follower_leader_Y": self.compile_diagram_Y
+            "iterative": self.compile_diagram_iteratively
         }
 
     def compile_diagram(self, diagram, instance, compilation, compilation_method, max_width, ordering_heuristic, Y=None):
-        if Y:
-            diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic, Y)
+        if Y and compilation_method == "iterative":
+            diagram = self.compilation_methods["iterative"](diagram, instance, compilation, max_width, ordering_heuristic, Y)
         else:
             diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
 
@@ -37,7 +37,7 @@ class DecisionDiagramManager:
         """
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader".format(compilation))
+        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader - MaxWidth: {}".format(compilation, max_width))
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
@@ -276,7 +276,7 @@ class DecisionDiagramManager:
 
         return clean_diagram
 
-    def compile_diagram_Y(self, diagram, instance, compilation, max_width, ordering_heuristic, Y):
+    def compile_diagram_iteratively(self, diagram, instance, compilation, max_width, ordering_heuristic, Y):
         """
             This method compiles a DD, starting with the follower and continuing with the leader. 
             It only compiles y's belonging to set Y.
@@ -286,14 +286,14 @@ class DecisionDiagramManager:
         """
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader-Y".format(compilation))
+        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: iterative".format(compilation))
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
 
         diagram.max_width = max_width
         diagram.compilation = compilation
-        diagram.compilation_method = "follower_leader_Y"
+        diagram.compilation_method = "iterative"
         diagram.ordering_heuristic = ordering_heuristic
         diagram.var_order = var_order
 

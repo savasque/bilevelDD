@@ -15,11 +15,11 @@ from algorithms.utils.solve_aux_problem import run as solve_aux_problem
 LOG_LEVEL = "INFO"
 # Compilation
 COMPILATION = "restricted"
-COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "follower_leader_Y"]
+COMPILATION_METHOD = ["iterative"] #["follower_leader", "leader_follower", "iterative"]
 MAX_WIDTH = [10000]
 ORDERING_HEURISTIC = ["leader_feasibility"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
-SOLVER_TIME_LIMIT = 600
+SOLVER_TIME_LIMIT = 1800
 
 # LogLevel
 logzero.loglevel(logging.getLevelName(LOG_LEVEL))
@@ -40,7 +40,10 @@ def run():
                     # Load data
                     instance = parser.build_instance(instance_name) 
 
-                    if compilation_method == "follower_leader_Y":
+                    if compilation_method == "iterative":
+                        time_limit = int(SOLVER_TIME_LIMIT)
+                        best_result = {"lower_bound": -float("inf")}
+                        
                         # Initialize set of y's for Y-compilation
                         lb_tracking = list()
                         runtime = 0
@@ -59,8 +62,13 @@ def run():
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
                             # Algorithm
-                            result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT, incumbent={"x": x, "y": Y[-1]})
-                            runtime += result["total_runtime"]
+                            result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=time_limit, incumbent={"x": x, "y": Y[-1]})
+                            
+                            # Track best solution
+                            if result["lower_bound"] > best_result["lower_bound"]:
+                                best_result = result
+
+                            # Follower problem
                             lb_tracking.append(result["lower_bound"])
                             _, y = solve_follower_problem(instance, solution["x"])
                             _, y = solve_aux_problem(instance, solution["x"], instance.d @ y)
@@ -71,9 +79,16 @@ def run():
                             Y.append(y)
                             x = solution["x"]
 
-                        result["total_runtime"] = runtime
+                            #Update time
+                            runtime += result["total_runtime"]
+                            time_limit -= result["total_runtime"]
+
+                        # Update final result
+                        result = best_result
+                        result["time_limit"] = SOLVER_TIME_LIMIT
                         result["lower_bound_tracking"] = lb_tracking
                     else:
+                        # Compile diagram
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
                         diagram = diagram_manager.compile_diagram(
@@ -81,6 +96,7 @@ def run():
                             compilation_method=compilation_method, max_width=max_width, 
                             ordering_heuristic=ordering_heuristic
                         )
+
                         # Algorithm
                         result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT)
 

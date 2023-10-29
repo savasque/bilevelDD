@@ -29,7 +29,7 @@ def get_model(instance, diagram, time_limit, incumbent):
 
     x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")
-    w = model.addVars([arc.id for arc in arcs], vtype=gp.GRB.BINARY, name="w")
+    w = model.addVars([arc.id for arc in arcs], ub=1, name="w")
     pi = model.addVars([node.id for node in nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
     lamda = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 0], name="lambda")
     beta = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 1], name="beta")

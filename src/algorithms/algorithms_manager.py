@@ -23,15 +23,22 @@ class AlgorithmsManager:
         results["width"] = diagram.width
         self.logger.debug("Results: {}".format(results))
 
-        vars = {
-            "x": [i.X for i in vars["x"].values()],
-            "y": [i.X for i in vars["y"].values()],
-            "w": {key: value.X for key, value in vars["w"].items()}
-        }
+        try:
+            vars = {
+                "x": [i.X for i in vars["x"].values()],
+                "y": [i.X for i in vars["y"].values()],
+                "w": {key: value.X for key, value in vars["w"].items()}
+            }
+        except:
+            vars = dict()
 
         return results, vars
 
     def format_result(self, model, diagram, approach, relaxed_model=None):
+        try:
+            objval = model.objVal
+        except:
+            objval = None
         data = {
             "approach": approach,
             "compilation": diagram.compilation,
@@ -39,7 +46,7 @@ class AlgorithmsManager:
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
             "time_limit": model.Params.timeLimit,
-            "objval": model.objVal,
+            "objval": objval,
             "lower_bound": model.objBound,
             "MIPGap": model.MIPGap,
             "relaxation_objval": relaxed_model.objVal,
