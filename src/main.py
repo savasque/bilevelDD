@@ -15,11 +15,11 @@ from algorithms.utils.solve_aux_problem import run as solve_aux_problem
 LOG_LEVEL = "INFO"
 # Compilation
 COMPILATION = "restricted"
-COMPILATION_METHOD = ["iterative"] #["follower_leader", "leader_follower", "iterative"]
+COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative"]
 MAX_WIDTH = [10000]
-ORDERING_HEURISTIC = ["leader_feasibility"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
+ORDERING_HEURISTIC = ["competitive", "lhs_coeffs"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
-SOLVER_TIME_LIMIT = 1800
+SOLVER_TIME_LIMIT = 3600
 
 # LogLevel
 logzero.loglevel(logging.getLevelName(LOG_LEVEL))
@@ -31,8 +31,8 @@ def run():
     algorithms_manager = AlgorithmsManager()
 
     # Simulation
-    instances = ["30_3_25_1"] #["{}_{}_25_1".format(vars, constrs) for vars in [30] for constrs in [1, 2, 3, 5]]
-    results = list()
+    instances = ["30_5_25_1"] #["{}_{}_25_1".format(vars, constrs) for vars in [30] for constrs in [1, 2, 3, 5]]
+    name = None
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
@@ -41,18 +41,25 @@ def run():
                     instance = parser.build_instance(instance_name) 
 
                     if compilation_method == "iterative":
+                        ## Iterative compilation approach
                         time_limit = int(SOLVER_TIME_LIMIT)
                         best_result = {"lower_bound": -float("inf")}
-                        
-                        # Initialize set of y's for Y-compilation
                         lb_tracking = list()
-                        runtime = 0
+                        total_runtime = 0
+                        compilation_runtime = 0
+                        reduce_algorithm_runtime = 0
+                        model_runtime = 0
+
+                        # Follower problem
                         _, vars = solve_HPR(instance, obj="leader", sense="min")
                         _, y = solve_follower_problem(instance, vars["x"])
                         _, y = solve_aux_problem(instance, vars["x"], instance.d @ y)
+
+                        # Collect solution
                         x = vars["x"]
                         Y = [y]
-                        while runtime <= SOLVER_TIME_LIMIT:
+
+                        while total_runtime <= SOLVER_TIME_LIMIT:
                             # Compile diagram
                             diagram = DecisionDiagram()
                             diagram_manager = DecisionDiagramManager()
@@ -61,7 +68,8 @@ def run():
                                 compilation_method=compilation_method, max_width=max_width, 
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
-                            # Algorithm
+
+                            # Solve reformulation
                             result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=time_limit, incumbent={"x": x, "y": Y[-1]})
                             
                             # Track best solution
@@ -69,25 +77,37 @@ def run():
                                 best_result = result
 
                             # Follower problem
-                            lb_tracking.append(result["lower_bound"])
                             _, y = solve_follower_problem(instance, solution["x"])
                             _, y = solve_aux_problem(instance, solution["x"], instance.d @ y)
 
-                            # Collect y
+                            # Collect solution
                             if y in Y:
                                 break
                             Y.append(y)
                             x = solution["x"]
 
-                            #Update time
-                            runtime += result["total_runtime"]
+                            # Update times
+                            total_runtime += result["total_runtime"]
+                            compilation_runtime += result["compilation_runtime"]
+                            reduce_algorithm_runtime += result["reduce_algorithm_runtime"]
+                            model_runtime += result["model_runtime"]
                             time_limit -= result["total_runtime"]
 
+                            lb_tracking.append((result["lower_bound"], total_runtime))
+
                         # Update final result
+                        best_result["total_runtime"] = total_runtime
+                        best_result["compilation_runtime"] = compilation_runtime
+                        best_result["model_runtime"] = model_runtime
+                        best_result["time_limit"] = SOLVER_TIME_LIMIT
+                        best_result["lower_bound_tracking"] = lb_tracking
+                        best_result["width"] = result["width"]
+                        best_result["initial_width"] = result["initial_width"]
+                        best_result["num_vars"] = result["num_vars"]
+                        best_result["num_constrs"] = result["num_constrs"]
                         result = best_result
-                        result["time_limit"] = SOLVER_TIME_LIMIT
-                        result["lower_bound_tracking"] = lb_tracking
                     else:
+                        ## One-time compilation approaches
                         # Compile diagram
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
@@ -97,12 +117,10 @@ def run():
                             ordering_heuristic=ordering_heuristic
                         )
 
-                        # Algorithm
+                        # Solve reformulation
                         result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT)
 
-                    # Collect results
-                    results.append(result)
-    # Write results
-    parser.write_results(results)
+                    # Write results
+                    name = parser.write_results(result, name)
 
 run()

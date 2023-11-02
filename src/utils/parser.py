@@ -65,10 +65,20 @@ class Parser:
 
         return Instance(file_name, data)
 
-    def write_results(self, results):
-        results = pd.DataFrame(results)
-        results.set_index("instance", inplace=True)
-        results.to_excel("results/{}.xlsx".format(datetime.now()))
+    def write_results(self, result, name=None):
+        new_result = pd.DataFrame([result], index=["instance"])
+        new_result.set_index("instance", inplace=True)
+        if name:
+            current_results = pd.read_excel("results/{}.xlsx".format(name))
+            current_results.set_index("instance", inplace=True)
+            current_results = pd.concat([current_results, new_result])
+            current_results.to_excel("results/{}.xlsx".format(name))
+        else:
+            
+            name = datetime.now()
+            new_result.to_excel("results/{}.xlsx".format(name))
+
+        return name
 
 
 if __name__ == "__main__":

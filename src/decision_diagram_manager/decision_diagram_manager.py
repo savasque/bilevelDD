@@ -23,6 +23,8 @@ class DecisionDiagramManager:
             diagram = self.compilation_methods["iterative"](diagram, instance, compilation, max_width, ordering_heuristic, Y)
         else:
             diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
+        
+        diagram.initial_width = int(diagram.width)
 
         self.reduce_diagram(diagram)
         
@@ -127,7 +129,7 @@ class DecisionDiagramManager:
 
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
-                next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player=player)
+                next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player=player)
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
 
@@ -251,7 +253,7 @@ class DecisionDiagramManager:
 
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
-                next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player=player)
+                next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player=player)
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
 
@@ -286,7 +288,7 @@ class DecisionDiagramManager:
         """
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: iterative".format(compilation))
+        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: iterative - MaxWidth: {}".format(compilation, max_width))
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
@@ -379,7 +381,7 @@ class DecisionDiagramManager:
 
                 # Width limit
                 if compilation == "restricted" and len(next_layer_queue) > max_width:
-                    next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player="follower")
+                    next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player="follower")
                 if layer == instance.Fcols - 1:
                     inbetween_layer_queue += next_layer_queue
                     current_layer_queue = deque()
@@ -436,7 +438,7 @@ class DecisionDiagramManager:
 
             # Width limit
             if compilation == "restricted" and len(next_layer_queue) > max_width:
-                next_layer_queue = self.reduced_queue(diagram, next_layer_queue, max_width, player="leader")
+                next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player="leader")
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
 
@@ -573,11 +575,13 @@ class DecisionDiagramManager:
             self.logger.debug("Variable ordering heuristic: leader feasibility")
             for j in range(instance.Fcols):
                 order["follower"].append((j, sum([instance.b[i] - instance.D[i][j] for i in range(instance.Frows)])))
+            order["follower"].sort(key=lambda x: x[1], reverse=True)  # Sort variables in descending order
+            order["follower"] = [i[0] for i in order["follower"]]
             for j in range(instance.Lcols):
                 order["leader"].append((j, instance.c_leader[j]))
-            for key in order:
-                order[key].sort(key=lambda x: x[1], reverse=True)  # Sort variables in descending order
-                order[key] = [i[0] for i in order[key]]
+            order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+            order["leader"] = [i[0] for i in order["leader"]]
+                
         
         else:
             self.logger.debug("Variable ordering heuristic: given order")
@@ -638,7 +642,7 @@ class DecisionDiagramManager:
         node.leader_cost = min(node.leader_cost, new_node.leader_cost)
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
 
-    def reduced_queue(self, diagram, queue, max_width, player):
+    def reduced_queue(self, queue, max_width, player):
         if player == "follower":
             queue = sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost))  # Sort nodes in ascending order # TODO: remove int
         else:

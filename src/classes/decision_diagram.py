@@ -10,6 +10,7 @@ class DecisionDiagram:
         self.var_order = None
         self.compilation_time = None
         self.reduce_algorithm_time = None
+        self.initial_width = None
 
     @property
     def node_count(self):
@@ -68,9 +69,5 @@ class DecisionDiagram:
         self.var_order = diagram.var_order
 
     def remove_node(self, node):
-        # for arc in node.outgoing_arcs:
-        #     self.nodes[arc.head].incoming_arcs = [a for a in self.nodes[arc.head].incoming_arcs if a.tail != node.id]
-        # for arc in node.incoming_arcs:
-        #     self.nodes[arc.head].outgoing_arcs = [a for a in self.nodes[arc.head].outgoing_arcs if a.head != node.id]
         del self.nodes[node.id]
         

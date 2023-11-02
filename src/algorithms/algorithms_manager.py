@@ -21,6 +21,7 @@ class AlgorithmsManager:
         results = self.format_result(model, diagram, approach="DD_reformulation", relaxed_model=relaxed_model)
         results["instance"] = instance.name
         results["width"] = diagram.width
+        results["initial_width"] = diagram.initial_width
         self.logger.debug("Results: {}".format(results))
 
         try:
