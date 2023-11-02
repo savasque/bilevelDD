@@ -17,7 +17,7 @@ LOG_LEVEL = "INFO"
 COMPILATION = "restricted"
 COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative"]
 MAX_WIDTH = [10000]
-ORDERING_HEURISTIC = ["competitive", "lhs_coeffs"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
+ORDERING_HEURISTIC = ["cost_competitive", "leader_feasibility"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 3600
 
@@ -31,14 +31,17 @@ def run():
     algorithms_manager = AlgorithmsManager()
 
     # Simulation
-    instances = ["30_5_25_1"] #["{}_{}_25_1".format(vars, constrs) for vars in [30] for constrs in [1, 2, 3, 5]]
+    instances = ["{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
     name = None
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
                 for compilation_method in COMPILATION_METHOD:
                     # Load data
-                    instance = parser.build_instance(instance_name) 
+                    instance = parser.build_instance(instance_name)[0] 
+
+                    # Get HPR bound
+                    HPR_value = solve_HPR(instance)
 
                     if compilation_method == "iterative":
                         ## Iterative compilation approach
@@ -105,6 +108,7 @@ def run():
                         best_result["initial_width"] = result["initial_width"]
                         best_result["num_vars"] = result["num_vars"]
                         best_result["num_constrs"] = result["num_constrs"]
+                        best_result["HPR"] = HPR_value
                         result = best_result
                     else:
                         ## One-time compilation approaches
@@ -119,6 +123,8 @@ def run():
 
                         # Solve reformulation
                         result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT)
+
+                        result["HPR"] = HPR_value
 
                     # Write results
                     name = parser.write_results(result, name)

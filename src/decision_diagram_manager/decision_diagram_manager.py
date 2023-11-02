@@ -559,7 +559,7 @@ class DecisionDiagramManager:
                 order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
                 order[key] = [i[0] for i in order[key]]
 
-        # Leader and follower costs
+        # Competitive costs
         elif ordering_heuristic == "cost_competitive":
             self.logger.debug("Variable ordering heuristic: leader and follower costs")
             for j in range(instance.Fcols):
@@ -574,8 +574,8 @@ class DecisionDiagramManager:
         elif ordering_heuristic == "leader_feasibility":
             self.logger.debug("Variable ordering heuristic: leader feasibility")
             for j in range(instance.Fcols):
-                order["follower"].append((j, sum([instance.b[i] - instance.D[i][j] for i in range(instance.Frows)])))
-            order["follower"].sort(key=lambda x: x[1], reverse=True)  # Sort variables in descending order
+                order["follower"].append((j, sum([instance.D[i][j] for i in range(instance.Frows)])))
+            order["follower"].sort(key=lambda x: x[1])  # Sort variables in ascending order
             order["follower"] = [i[0] for i in order["follower"]]
             for j in range(instance.Lcols):
                 order["leader"].append((j, instance.c_leader[j]))

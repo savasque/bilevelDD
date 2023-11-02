@@ -8,22 +8,26 @@ class AlgorithmsManager:
         self.logger = logzero.logger
     
     def run_DD_reformulation(self, instance, diagram, time_limit, incumbent=dict()):
+        # Solve DD reformulation
         self.logger.info("Solving DD refomulation. Time limit: {} sec".format(time_limit))
         model, vars = get_model(instance, diagram, time_limit, incumbent)
         model.optimize()
         self.logger.info("DD reformulation solved succesfully. Time elapsed: {} sec.".format(model.runtime))
         self.logger.debug("LB: {}, MIPGap: {}".format(model.objBound, model.MIPGap))
+        
+        # Solve continuous relaxation
         self.logger.info("Solving DD refomulation relaxation.".format(time_limit))
         relaxed_model = model.relax()
         relaxed_model.Params.OutputFlag = 0
         relaxed_model.optimize()
         self.logger.info("DD reformulation relaxation solved succesfully. Time elapsed: {} sec".format(relaxed_model.runtime))
+        
+        # Format results
         results = self.format_result(model, diagram, approach="DD_reformulation", relaxed_model=relaxed_model)
         results["instance"] = instance.name
         results["width"] = diagram.width
         results["initial_width"] = diagram.initial_width
         self.logger.debug("Results: {}".format(results))
-
         try:
             vars = {
                 "x": [i.X for i in vars["x"].values()],
@@ -50,7 +54,7 @@ class AlgorithmsManager:
             "objval": objval,
             "lower_bound": model.objBound,
             "MIPGap": model.MIPGap,
-            "relaxation_objval": relaxed_model.objVal,
+            "relaxation_objval": None if not relaxed_model else relaxed_model.objVal,
             "total_runtime": diagram.compilation_runtime + diagram.reduce_algorithm_runtime + model.runtime,
             "compilation_runtime": diagram.compilation_runtime,
             "reduce_algorithm_runtime": diagram.reduce_algorithm_runtime,
