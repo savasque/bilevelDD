@@ -39,7 +39,6 @@ def run():
                 for compilation_method in COMPILATION_METHOD:
                     # Load data
                     instance = parser.build_instance(instance_name)[0] 
-
                     # Get HPR bound
                     HPR_value = solve_HPR(instance)
 
@@ -52,12 +51,10 @@ def run():
                         compilation_runtime = 0
                         reduce_algorithm_runtime = 0
                         model_runtime = 0
-
                         # Follower problem
                         _, vars = solve_HPR(instance, obj="leader", sense="min")
                         _, y = solve_follower_problem(instance, vars["x"])
                         _, y = solve_aux_problem(instance, vars["x"], instance.d @ y)
-
                         # Collect solution
                         x = vars["x"]
                         Y = [y]
@@ -71,31 +68,26 @@ def run():
                                 compilation_method=compilation_method, max_width=max_width, 
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
-
                             # Solve reformulation
                             result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=time_limit, incumbent={"x": x, "y": Y[-1]})
-                            
                             # Track best solution
                             if result["lower_bound"] > best_result["lower_bound"]:
                                 best_result = result
-
                             # Follower problem
                             _, y = solve_follower_problem(instance, solution["x"])
                             _, y = solve_aux_problem(instance, solution["x"], instance.d @ y)
-
                             # Collect solution
                             if y in Y:
                                 break
                             Y.append(y)
                             x = solution["x"]
-
                             # Update times
                             total_runtime += result["total_runtime"]
                             compilation_runtime += result["compilation_runtime"]
                             reduce_algorithm_runtime += result["reduce_algorithm_runtime"]
                             model_runtime += result["model_runtime"]
                             time_limit -= result["total_runtime"]
-
+                            # Track lower bound
                             lb_tracking.append((result["lower_bound"], total_runtime))
 
                         # Update final result
@@ -111,7 +103,7 @@ def run():
                         best_result["HPR"] = HPR_value
                         result = best_result
                     else:
-                        ## One-time compilation approaches
+                        ## One-time compilation approach
                         # Compile diagram
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
@@ -120,10 +112,9 @@ def run():
                             compilation_method=compilation_method, max_width=max_width, 
                             ordering_heuristic=ordering_heuristic
                         )
-
                         # Solve reformulation
                         result, solution = algorithms_manager.run_DD_reformulation(instance, diagram, time_limit=SOLVER_TIME_LIMIT)
-
+                        # Update final result
                         result["HPR"] = HPR_value
 
                     # Write results
