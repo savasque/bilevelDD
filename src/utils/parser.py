@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import logzero
 from datetime import datetime
+import json
 
 from classes.instance import Instance
 
@@ -73,10 +74,16 @@ class Parser:
             current_results.set_index("instance", inplace=True)
             current_results = pd.concat([current_results, new_result])
             current_results.to_excel("results/{}.xlsx".format(name))
+            with open("results/{}.json".format(name), "r") as json_file:
+                data = json.load(json_file)
+                data["results"].append(result)
+            with open("results/{}.json".format(name), "w") as json_file:
+                json.dump(data, json_file)
         else:
-            
-            name = datetime.now()
+            name = "results"
             new_result.to_excel("results/{}.xlsx".format(name))
+            with open("results/{}.json".format(name), "w") as json_file:
+                json.dump({"results": [result]}, json_file)
 
         return name
 
