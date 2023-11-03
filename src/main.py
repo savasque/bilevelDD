@@ -38,9 +38,9 @@ def run():
             for ordering_heuristic in ORDERING_HEURISTIC:
                 for compilation_method in COMPILATION_METHOD:
                     # Load data
-                    instance = parser.build_instance(instance_name)[0] 
+                    instance = parser.build_instance(instance_name)
                     # Get HPR bound
-                    HPR_value = solve_HPR(instance)
+                    HPR_value = solve_HPR(instance)[0]
 
                     if compilation_method == "iterative":
                         ## Iterative compilation approach
