@@ -15,15 +15,15 @@ class AlgorithmsManager:
         self.logger.info("DD reformulation solved succesfully. Time elapsed: {} sec.".format(model.runtime))
         self.logger.debug("LB: {}, MIPGap: {}".format(model.objBound, model.MIPGap))
         
-        # Solve continuous relaxation
-        self.logger.info("Solving DD refomulation relaxation.".format(time_limit))
-        relaxed_model = model.relax()
-        relaxed_model.Params.OutputFlag = 0
-        relaxed_model.optimize()
-        self.logger.info("DD reformulation relaxation solved succesfully. Time elapsed: {} sec".format(relaxed_model.runtime))
+        # # Solve continuous relaxation
+        # self.logger.info("Solving DD refomulation relaxation.".format(time_limit))
+        # relaxed_model = model.relax()
+        # relaxed_model.Params.OutputFlag = 0
+        # relaxed_model.optimize()
+        # self.logger.info("DD reformulation relaxation solved succesfully. Time elapsed: {} sec".format(relaxed_model.runtime))
         
         # Format results
-        results = self.format_result(model, diagram, approach="DD_reformulation", relaxed_model=relaxed_model)
+        results = self.format_result(model, diagram, approach="DD_reformulation") #, relaxed_model=relaxed_model)
         results["instance"] = instance.name
         results["width"] = diagram.width
         results["initial_width"] = diagram.initial_width

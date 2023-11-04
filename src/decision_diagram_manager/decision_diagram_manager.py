@@ -19,7 +19,7 @@ class DecisionDiagramManager:
         }
 
     def compile_diagram(self, diagram, instance, compilation, compilation_method, max_width, ordering_heuristic, Y=None):
-        if Y and compilation_method == "iterative":
+        if Y and compilation_method in ["collect_Y", "iterative"]:
             diagram = self.compilation_methods["iterative"](diagram, instance, compilation, max_width, ordering_heuristic, Y)
         else:
             diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
@@ -301,7 +301,7 @@ class DecisionDiagramManager:
 
         # Queues of nodes
         current_layer_queue = deque()
-        inbetween_layer_queue = deque()
+        inbetween_layer_queue = dict()
         next_layer_queue = deque()
 
         # Create root and sink nodes
@@ -382,8 +382,8 @@ class DecisionDiagramManager:
                 # Width limit
                 if compilation == "restricted" and len(next_layer_queue) > max_width:
                     next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player="follower")
-                if layer == instance.Fcols - 1:
-                    inbetween_layer_queue += next_layer_queue
+                if layer == instance.Fcols - 1 and next_layer_queue:
+                    inbetween_layer_queue[next_layer_queue[0].hash_key] = next_layer_queue[0]
                     current_layer_queue = deque()
                 else:
                     current_layer_queue = next_layer_queue
@@ -394,7 +394,7 @@ class DecisionDiagramManager:
         for layer in range(instance.Fcols):
             var_index = var_order["follower"][layer]
             self.update_completions_bounds(instance, completion_bounds, var_index, player="follower")
-        current_layer_queue = inbetween_layer_queue
+        current_layer_queue = deque(inbetween_layer_queue.values())
         for layer in range(instance.Fcols, instance.Fcols + instance.Lcols):
             var_index = var_order["leader"][layer - instance.Fcols]
             self.logger.debug("leader layer: {} - Variable index: {} - Queue size: {}".format(layer, var_index, len(current_layer_queue)))
