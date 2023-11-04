@@ -111,7 +111,8 @@ def run():
                         diagram_manager = DecisionDiagramManager()
                         if compilation_method == "collect_Y":
                             # Collect y's
-                            Y = collect_Y(instance, num_solutions=2000)
+                            Y_length = (instance.Lcols + instance.Fcols) * 10
+                            Y = collect_Y(instance, num_solutions=Y_length)
                         diagram = diagram_manager.compile_diagram(
                             diagram, instance, compilation=COMPILATION, 
                             compilation_method=compilation_method, max_width=max_width, 
