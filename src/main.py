@@ -17,7 +17,7 @@ LOG_LEVEL = "DEBUG"
 # Compilation
 COMPILATION = "restricted"
 COMPILATION_METHOD = ["collect_Y"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
-MAX_WIDTH = [10000]
+MAX_WIDTH = [1000]
 ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 3600
@@ -32,8 +32,8 @@ def run():
     algorithms_manager = AlgorithmsManager()
 
     # Simulation
-    instances = ["{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
-    # instances = ["20_5_25_1"]
+    instances = ["other/{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
+    # instances = ["other/20_2_25_1"]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
@@ -68,6 +68,7 @@ def run():
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
                             diagram.compilation_method = compilation_method
+
                             # Solve reformulation
                             result, solution = algorithms_manager.run_DD_reformulation(
                                 instance, diagram, time_limit=time_limit, incumbent={"x": x, "y": Y[-1]}
@@ -113,8 +114,8 @@ def run():
                         Y = None
                         if compilation_method == "collect_Y":
                             # Collect y's
-                            Y_length = max_width // 20
-                            Y = collect_Y(instance, num_solutions=Y_length)
+                            Y_length = 500
+                            Y, collect_Y_runtime = collect_Y(instance, num_solutions=Y_length)
                         diagram = diagram_manager.compile_diagram(
                             diagram, instance, compilation=COMPILATION, 
                             compilation_method=compilation_method, max_width=max_width, 
@@ -124,12 +125,14 @@ def run():
                         diagram.compilation_method = compilation_method
                         # Solve reformulation
                         result, solution = algorithms_manager.run_DD_reformulation(
-                            instance, diagram, time_limit=SOLVER_TIME_LIMIT,
+                            instance, diagram, time_limit=SOLVER_TIME_LIMIT - collect_Y_runtime,
                             incumbent=None if compilation_method != "collect_Y" else {"x": HPR_solution["x"], "y": y}
                         )
                         # Update final result
                         result["HPR"] = HPR_value
                         result["Y_length"] = None if not Y else len(Y)
+                        result["Y_runtime"] = collect_Y_runtime
+                        result["total_runtime"] += collect_Y_runtime
 
                     # Write results
                     name = "w{}".format(max_width) if not Y else "w{}-Y{}".format(max_width, len(Y))
