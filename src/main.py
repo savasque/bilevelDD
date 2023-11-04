@@ -34,7 +34,6 @@ def run():
     # Simulation
     instances = ["{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
     # instances = ["20_5_25_1"]
-    name = None
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
@@ -133,6 +132,7 @@ def run():
                         result["Y_length"] = None if not Y else len(Y)
 
                     # Write results
+                    name = "w{}".format(max_width) if not Y else "w{}-Y{}".format(max_width, len(Y))
                     name = parser.write_results(result, name)
 
 run()

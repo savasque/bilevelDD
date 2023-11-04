@@ -66,10 +66,10 @@ class Parser:
 
         return Instance(file_name, data)
 
-    def write_results(self, result, name=None):
+    def write_results(self, result, name):
         new_result = pd.DataFrame([result], index=["instance"])
         new_result.set_index("instance", inplace=True)
-        if name:
+        try:
             current_results = pd.read_excel("results/{}.xlsx".format(name))
             current_results.set_index("instance", inplace=True)
             current_results = pd.concat([current_results, new_result])
@@ -79,8 +79,7 @@ class Parser:
                 data["results"].append(result)
             with open("results/{}.json".format(name), "w") as json_file:
                 json.dump(data, json_file)
-        else:
-            name = "results"
+        except:
             new_result.to_excel("results/{}.xlsx".format(name))
             with open("results/{}.json".format(name), "w") as json_file:
                 json.dump({"results": [result]}, json_file)
