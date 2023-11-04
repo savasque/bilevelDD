@@ -32,8 +32,8 @@ def run():
     algorithms_manager = AlgorithmsManager()
 
     # Simulation
-    # instances = ["{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
-    instances = ["20_5_25_1"]
+    instances = ["{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
+    # instances = ["20_5_25_1"]
     name = None
     for instance_name in instances:
         for max_width in MAX_WIDTH:
@@ -68,6 +68,7 @@ def run():
                                 compilation_method=compilation_method, max_width=max_width, 
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
+                            diagram.compilation_method = compilation_method
                             # Solve reformulation
                             result, solution = algorithms_manager.run_DD_reformulation(
                                 instance, diagram, time_limit=time_limit, incumbent={"x": x, "y": Y[-1]}
@@ -103,15 +104,17 @@ def run():
                         best_result["num_vars"] = result["num_vars"]
                         best_result["num_constrs"] = result["num_constrs"]
                         best_result["HPR"] = HPR_value
+                        best_result["Y_length"] = len(Y)
                         result = best_result
                     else:
                         ## One-time compilation approach
                         # Compile diagram
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
+                        Y = None
                         if compilation_method == "collect_Y":
                             # Collect y's
-                            Y_length = (instance.Lcols + instance.Fcols) * 10
+                            Y_length = max_width // 20
                             Y = collect_Y(instance, num_solutions=Y_length)
                         diagram = diagram_manager.compile_diagram(
                             diagram, instance, compilation=COMPILATION, 
@@ -119,6 +122,7 @@ def run():
                             ordering_heuristic=ordering_heuristic, 
                             Y=None if compilation_method != "collect_Y" else Y
                         )
+                        diagram.compilation_method = compilation_method
                         # Solve reformulation
                         result, solution = algorithms_manager.run_DD_reformulation(
                             instance, diagram, time_limit=SOLVER_TIME_LIMIT,
@@ -126,6 +130,7 @@ def run():
                         )
                         # Update final result
                         result["HPR"] = HPR_value
+                        result["Y_length"] = None if not Y else len(Y)
 
                     # Write results
                     name = parser.write_results(result, name)

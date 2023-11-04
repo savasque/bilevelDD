@@ -47,7 +47,6 @@ class DecisionDiagramManager:
 
         diagram.max_width = max_width
         diagram.compilation = compilation
-        diagram.compilation_method = "follower_leader"
         diagram.ordering_heuristic = ordering_heuristic
         diagram.var_order = var_order
 
@@ -171,7 +170,6 @@ class DecisionDiagramManager:
 
         diagram.max_width = max_width
         diagram.compilation = compilation
-        diagram.compilation_method = "leader_follower"
         diagram.ordering_heuristic = ordering_heuristic
         diagram.var_order = var_order
 
@@ -288,14 +286,13 @@ class DecisionDiagramManager:
         """
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: iterative - MaxWidth: {}".format(compilation, max_width))
+        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: iterative/collect_Y - MaxWidth: {}".format(compilation, max_width))
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
 
         diagram.max_width = max_width
         diagram.compilation = compilation
-        diagram.compilation_method = "iterative"
         diagram.ordering_heuristic = ordering_heuristic
         diagram.var_order = var_order
 
