@@ -36,25 +36,29 @@ class Parser:
             }
             for i in aux_file.read().splitlines():
                 key, value = i.split(" ")[:2]
-                data[key].append(int(value))
+                data[key].append(int(float(value)))
 
         return data
 
     def build_instance(self, file_name):
         mps_file = self.load_mps_file(file_name)
         aux_file = self.load_aux_file(file_name)
-        Lrows = [i for i in range(0, len(mps_file["constrs"]) - aux_file["M"][0])]
-        Frows = [i for i in range(len(mps_file["constrs"]) - aux_file["M"][0], len(mps_file["constrs"]))]
-        Lcols = [i for i in range(0, len(mps_file["obj"]) - aux_file["N"][0])]
-        Fcols = [i for i in range(len(mps_file["obj"]) - aux_file["N"][0], len(mps_file["obj"]))]
+        # Lrows = [i for i in range(0, len(mps_file["constrs"]) - aux_file["M"][0])]
+        Lrows = [i for i in range(len(mps_file["constrs"])) if i not in aux_file["LR"]]
+        # Frows = [i for i in range(len(mps_file["constrs"]) - aux_file["M"][0], len(mps_file["constrs"]))]
+        Frows = aux_file["LR"]
+        # Lcols = [i for i in range(0, len(mps_file["obj"]) - aux_file["N"][0])]
+        Lcols = [i for i in range(len(mps_file["obj"])) if i not in aux_file["LC"]]
+        # Fcols = [i for i in range(len(mps_file["obj"]) - aux_file["N"][0], len(mps_file["obj"]))]
+        Fcols = aux_file["LC"]
 
         data = {
             "id": file_name,
-            "A": mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1],
-            "B": mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1],
+            "A": [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1],
+            "B": [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1],
             "C": mps_file["constrs"][Frows[0]:Frows[-1] + 1, Lcols[0]:Lcols[-1] + 1],
             "D": mps_file["constrs"][Frows[0]:Frows[-1] + 1, Fcols[0]:Fcols[-1] + 1],
-            "a": mps_file["rhs"][Lrows[0]:Lrows[-1] + 1],
+            "a": [] if not Lrows else mps_file["rhs"][Lrows[0]:Lrows[-1] + 1],
             "b": mps_file["rhs"][Frows[0]:Frows[-1] + 1],
             "c_leader": mps_file["obj"][Lcols[0]:Lcols[-1] + 1],
             "c_follower": mps_file["obj"][Fcols[0]:Fcols[-1] + 1],
