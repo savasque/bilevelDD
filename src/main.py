@@ -31,9 +31,11 @@ def run():
     parser = Parser()
     algorithms_manager = AlgorithmsManager()
 
+    Y_tracker = dict()
+
     # Simulation
     instances = ["other/{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
-    # instances = ["other/20_2_25_1"]
+    # instances = ["other/30_5_25_1"]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
@@ -108,14 +110,20 @@ def run():
                         result = best_result
                     else:
                         ## One-time compilation approach
-                        # Compile diagram
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
                         Y = None
+                        # Build set Y
                         if compilation_method == "collect_Y":
-                            # Collect y's
-                            Y_length = 500
-                            Y, collect_Y_runtime = collect_Y(instance, num_solutions=Y_length)
+                            if instance not in Y_tracker:
+                                # Collect y's
+                                Y_length = 500
+                                Y, collect_Y_runtime = collect_Y(instance, num_solutions=Y_length)
+                                Y_tracker[instance] = {"Y": Y, "runtime": collect_Y_runtime}
+                            else:
+                                Y = Y_tracker[instance]["Y"]
+                                collect_Y_runtime = Y_tracker[instance]["runtime"]
+                        # Compile diagram
                         diagram = diagram_manager.compile_diagram(
                             diagram, instance, compilation=COMPILATION, 
                             compilation_method=compilation_method, max_width=max_width, 
