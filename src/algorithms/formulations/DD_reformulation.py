@@ -1,4 +1,5 @@
 import gurobipy as gp
+import numpy as np
 
 from algorithms.utils.solve_HPR import run as solve_HPR
 
@@ -80,6 +81,13 @@ def get_model(instance, diagram, time_limit, incumbent):
 
     model.addConstrs((lamda[arc.id] <= (M - nodes[arc.tail].follower_cost) * x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="StrongDual0")
     model.addConstrs((beta[arc.id] <= (M - nodes[arc.tail].follower_cost) * (1 - x[arc.var_index]) for arc in arcs if arc.player == "leader" and arc.value == 1), name="StrongDual1")
+
+    # Strengthening (Fischetti et al, 2017)
+    for j in range(Fcols):
+        if np.all([D[i][j] <= 0 for i in range(Frows)]) and d[j] < 0:
+            model.addConstr(y[j] == 1)
+        elif np.all([D[i][j] >= 0 for i in range(Frows)]) and d[j] > 0:
+            model.addConstr(y[j] == 0)
 
     # Objective function
     obj = gp.quicksum(c_leader[j] * x[j] for j in range(Lcols)) + gp.quicksum(c_follower[j] * y[j] for j in range(Fcols))
