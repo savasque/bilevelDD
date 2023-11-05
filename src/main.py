@@ -13,11 +13,11 @@ from algorithms.utils.collect_Y import run as collect_Y
 
 ## Parameters
 # General
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "INFO"
 # Compilation
 COMPILATION = "restricted"
-COMPILATION_METHOD = ["collect_Y"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
-MAX_WIDTH = [1000]
+COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
+MAX_WIDTH = [2500]
 ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 3600
@@ -32,10 +32,11 @@ def run():
     algorithms_manager = AlgorithmsManager()
 
     Y_tracker = dict()
+    collect_Y_runtime = 0
 
     # Simulation
-    instances = ["other/{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3, 5]]
-    # instances = ["other/30_5_25_1"]
+    instances = ["other/{}_{}_25_1".format(i, j) for i in [25, 50, 75] for j in [1, 2, 3]]
+    # instances = ["other/75_1_25_1"]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
@@ -117,7 +118,7 @@ def run():
                         if compilation_method == "collect_Y":
                             if instance not in Y_tracker:
                                 # Collect y's
-                                Y_length = 500
+                                Y_length = 1000
                                 Y, collect_Y_runtime = collect_Y(instance, num_solutions=Y_length)
                                 Y_tracker[instance] = {"Y": Y, "runtime": collect_Y_runtime}
                             else:
@@ -143,7 +144,7 @@ def run():
                         result["total_runtime"] += collect_Y_runtime
 
                     # Write results
-                    name = "w{}".format(max_width) if not Y else "w{}-Y{}".format(max_width, len(Y))
+                    name = "w{}-O{}".format(max_width, ordering_heuristic) if not Y else "w{}-O{}-Y{}".format(max_width, ordering_heuristic, len(Y))
                     name = parser.write_results(result, name)
 
 run()
