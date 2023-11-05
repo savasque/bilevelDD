@@ -15,12 +15,15 @@ from algorithms.utils.collect_Y import run as collect_Y
 # General
 LOG_LEVEL = "INFO"
 # Compilation
-COMPILATION = "restricted"
+COMPILATION = "complete"
 COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
 MAX_WIDTH = [2500]
 ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 3600
+
+if COMPILATION == "complete":
+    MAX_WIDTH = [0]
 
 # LogLevel
 logzero.loglevel(logging.getLevelName(LOG_LEVEL))
@@ -35,12 +38,12 @@ def run():
     collect_Y_runtime = 0
 
     # Simulation
-    instances = ["other/{}_{}_25_1".format(i, j) for i in [25, 50, 75] for j in [1, 2, 3]]
-    # instances = ["other/75_1_25_1"]
+    # instances = ["other/{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3]]
+    instances = ["other/20_2_25_1"]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
-                for compilation_method in COMPILATION_METHOD:
+                for compilation_method in COMPILATION_METHOD: 
                     # Load data
                     instance = parser.build_instance(instance_name)
                     # Get HPR bound
