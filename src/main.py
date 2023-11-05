@@ -38,8 +38,8 @@ def run():
     collect_Y_runtime = 0
 
     # Simulation
-    # instances = ["other/{}_{}_25_1".format(i, j) for i in [20, 30, 40] for j in [1, 2, 3]]
-    instances = ["other/20_2_25_1"]
+    instances = ["other/{}_{}_25_1".format(i, j) for j in [1, 2, 3, 5] for i in [20, 30, 40]]
+    #instances = ["other/20_2_25_1"]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
