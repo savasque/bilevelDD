@@ -16,9 +16,9 @@ from algorithms.utils.collect_Y import run as collect_Y
 # General
 LOG_LEVEL = "INFO"
 # Compilation
-COMPILATION = "complete"
+COMPILATION = "restricted"
 COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
-MAX_WIDTH = [2500]
+MAX_WIDTH = [10000]
 ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 3600
@@ -160,6 +160,6 @@ def run(instance_name=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("instance_name", type=str)
+    parser.add_argument("--instance_name", type=str)
     args = parser.parse_args()
     run(args.instance_name)
