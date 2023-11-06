@@ -1,4 +1,5 @@
 import logging, logzero
+import argparse
 
 from utils.parser import Parser
 
@@ -29,7 +30,7 @@ if COMPILATION == "complete":
 logzero.loglevel(logging.getLevelName(LOG_LEVEL))
 logger = logzero.logger
 
-def run():
+def run(instance_name=None):
     # Classes instantiation
     parser = Parser()
     algorithms_manager = AlgorithmsManager()
@@ -39,7 +40,8 @@ def run():
 
     # Simulation
     instances = ["other/{}_{}_25_1".format(i, j) for j in [1, 2, 3, 5] for i in [20, 30, 40]]
-    #instances = ["other/20_2_25_1"]
+    if instance_name:
+        instances = [instance_name]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
@@ -111,17 +113,19 @@ def run():
                         best_result["num_constrs"] = result["num_constrs"]
                         best_result["HPR"] = HPR_value
                         best_result["Y_length"] = len(Y)
+                        best_result["num_nodes"] = diagram.node_count + 2
+                        best_result["num_arcs"] = diagram.arc_count
                         result = best_result
                     else:
                         ## One-time compilation approach
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
-                        Y = None
+                        Y = list()
                         # Build set Y
                         if compilation_method == "collect_Y":
                             if instance not in Y_tracker:
                                 # Collect y's
-                                Y_length = 1000
+                                Y_length = 500
                                 Y, collect_Y_runtime = collect_Y(instance, num_solutions=Y_length)
                                 Y_tracker[instance] = {"Y": Y, "runtime": collect_Y_runtime}
                             else:
@@ -145,9 +149,17 @@ def run():
                         result["Y_length"] = None if not Y else len(Y)
                         result["Y_runtime"] = collect_Y_runtime
                         result["total_runtime"] += collect_Y_runtime
+                        result["time_limit"] = SOLVER_TIME_LIMIT
+                        result["num_nodes"] = diagram.node_count + 2
+                        result["num_arcs"] = diagram.arc_count
 
                     # Write results
                     name = "w{}-O{}".format(max_width, ordering_heuristic) if not Y else "w{}-O{}-Y{}".format(max_width, ordering_heuristic, len(Y))
                     name = parser.write_results(result, name)
 
-run()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("instance_name", type=str)
+    args = parser.parse_args()
+    run(args.instance_name)
