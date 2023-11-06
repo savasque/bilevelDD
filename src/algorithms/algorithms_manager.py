@@ -1,6 +1,7 @@
 import logzero
 
 from .formulations.DD_reformulation import get_model
+from .utils.solve_follower_problem import run as solve_follower_problem
 
 
 class AlgorithmsManager:
@@ -36,6 +37,8 @@ class AlgorithmsManager:
             }
         except:
             vars = dict()
+        follower_response = solve_follower_problem(instance, vars["x"])[1]
+        results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
 
         return results, vars
 
