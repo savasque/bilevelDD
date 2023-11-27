@@ -18,11 +18,11 @@ class DecisionDiagramManager:
             "iterative": self.compile_diagram_iteratively
         }
 
-    def compile_diagram(self, diagram, instance, compilation, compilation_method, max_width, ordering_heuristic, Y=None):
-        if Y and compilation_method in ["collect_Y", "iterative"]:
-            diagram = self.compilation_methods["iterative"](diagram, instance, compilation, max_width, ordering_heuristic, Y)
+    def compile_diagram(self, diagram, instance, build_method, max_width, ordering_heuristic, Y=None):
+        if Y and build_method in ["collect_Y", "iterative"]:
+            diagram = self.compilation_methods["iterative"](diagram, instance, max_width, ordering_heuristic, Y)
         else:
-            diagram = self.compilation_methods[compilation_method](diagram, instance, compilation, max_width, ordering_heuristic)
+            diagram = self.compilation_methods[build_method](diagram, instance, max_width, ordering_heuristic)
         
         diagram.initial_width = int(diagram.width)
 
@@ -30,7 +30,7 @@ class DecisionDiagramManager:
         
         return diagram
 
-    def compile_diagram_FL(self, diagram, instance, compilation, max_width, ordering_heuristic):
+    def compile_diagram_FL(self, diagram, instance, max_width, ordering_heuristic):
         """
             This method compiles a DD, starting with the follower and continuing with the leader.
             
@@ -39,14 +39,13 @@ class DecisionDiagramManager:
         """
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation type: {} - Compilation method: follower-leader - MaxWidth: {}".format(compilation, max_width))
+        self.logger.info("Compiling diagram. Build method: follower-leader - MaxWidth: {}".format(max_width))
         var_order = self.ordering_heuristic(instance, ordering_heuristic)
         self.logger.debug("Variable ordering: {}".format(var_order))
         n = instance.Lcols + instance.Fcols
         player = "follower"
 
         diagram.max_width = max_width
-        diagram.compilation = compilation
         diagram.ordering_heuristic = ordering_heuristic
         diagram.var_order = var_order
 
@@ -127,7 +126,7 @@ class DecisionDiagramManager:
                 raise ValueError("Diagram surpassed max node count: {:e}".format(diagram.node_count))
 
             # Width limit
-            if compilation == "restricted" and len(next_layer_queue) > max_width:
+            if max_width < float("inf") and len(next_layer_queue) > max_width:
                 next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player=player)
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()

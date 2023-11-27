@@ -52,7 +52,7 @@ class AlgorithmsManager:
         data = {
             "approach": approach,
             "compilation": diagram.compilation,
-            "compilation_method": diagram.compilation_method,
+            "build_method": diagram.build_method,
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
             "time_limit": model.Params.timeLimit,

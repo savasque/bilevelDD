@@ -16,21 +16,17 @@ from algorithms.utils.collect_Y import run as collect_Y
 # General
 LOG_LEVEL = "INFO"
 # Compilation
-COMPILATION = "restricted"
-COMPILATION_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
-MAX_WIDTH = [10000]
+BUILD_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
+MAX_WIDTH = [float("inf")]
 ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
 # Solver
 SOLVER_TIME_LIMIT = 3600
-
-if COMPILATION == "complete":
-    MAX_WIDTH = [0]
 
 # LogLevel
 logzero.loglevel(logging.getLevelName(LOG_LEVEL))
 logger = logzero.logger
 
-def run(instance_name=None):
+def run(args):
     # Classes instantiation
     parser = Parser()
     algorithms_manager = AlgorithmsManager()
@@ -39,13 +35,11 @@ def run(instance_name=None):
     collect_Y_runtime = 0
 
     # Simulation
-    instances = ["other/{}_{}_25_1".format(i, j) for j in [1, 2, 3, 5] for i in [20, 30, 40]]
-    if instance_name:
-        instances = [instance_name]
+    instances = [args.instance_name]
     for instance_name in instances:
         for max_width in MAX_WIDTH:
             for ordering_heuristic in ORDERING_HEURISTIC:
-                for compilation_method in COMPILATION_METHOD: 
+                for build_method in BUILD_METHOD: 
                     # Load data
                     instance = parser.build_instance(instance_name)
                     # Get HPR bound
@@ -53,7 +47,7 @@ def run(instance_name=None):
                     _, y = solve_follower_problem(instance, HPR_solution["x"])
                     _, y = solve_aux_problem(instance, HPR_solution["x"], instance.d @ y)
 
-                    if compilation_method == "iterative":
+                    if build_method == "iterative":
                         ## Iterative compilation approach
                         time_limit = int(SOLVER_TIME_LIMIT)
                         best_result = {"lower_bound": -float("inf")}
@@ -71,11 +65,11 @@ def run(instance_name=None):
                             diagram = DecisionDiagram()
                             diagram_manager = DecisionDiagramManager()
                             diagram = diagram_manager.compile_diagram(
-                                diagram, instance, compilation=COMPILATION, 
-                                compilation_method=compilation_method, max_width=max_width, 
+                                diagram, instance, 
+                                build_method=build_method, max_width=max_width, 
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
-                            diagram.compilation_method = compilation_method
+                            diagram.build_method = build_method
 
                             # Solve reformulation
                             result, solution = algorithms_manager.run_DD_reformulation(
@@ -122,7 +116,7 @@ def run(instance_name=None):
                         diagram_manager = DecisionDiagramManager()
                         Y = list()
                         # Build set Y
-                        if compilation_method == "collect_Y":
+                        if build_method == "collect_Y":
                             if instance not in Y_tracker:
                                 # Collect y's
                                 Y_length = 500
@@ -133,16 +127,15 @@ def run(instance_name=None):
                                 collect_Y_runtime = Y_tracker[instance]["runtime"]
                         # Compile diagram
                         diagram = diagram_manager.compile_diagram(
-                            diagram, instance, compilation=COMPILATION, 
-                            compilation_method=compilation_method, max_width=max_width, 
+                            diagram, instance, build_method=build_method, max_width=max_width, 
                             ordering_heuristic=ordering_heuristic, 
-                            Y=None if compilation_method != "collect_Y" else Y
+                            Y=None if build_method != "collect_Y" else Y
                         )
-                        diagram.compilation_method = compilation_method
+                        diagram.build_method = build_method
                         # Solve reformulation
                         result, solution = algorithms_manager.run_DD_reformulation(
                             instance, diagram, time_limit=SOLVER_TIME_LIMIT - collect_Y_runtime,
-                            incumbent=None if compilation_method != "collect_Y" else {"x": HPR_solution["x"], "y": y}
+                            incumbent=None if build_method != "collect_Y" else {"x": HPR_solution["x"], "y": y}
                         )
                         # Update final result
                         result["HPR"] = HPR_value
@@ -160,6 +153,6 @@ def run(instance_name=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--instance_name", type=str)
+    parser.add_argument("--instance_name", "-i", type=str)
     args = parser.parse_args()
-    run(args.instance_name)
+    run(args)

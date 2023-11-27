@@ -12,13 +12,13 @@ def run(instance, num_solutions):
         for y in new_ys:
             Y[str(y)] = y
     # iter = 0
-    # while len(Y) <= 2 * num_solutions // 3 and iter <= max_iters:
-    #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="leader")[1]
+    # while len(Y) <= 3 * num_solutions // 4 and iter <= max_iters:
+    #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="follower_only")[1]
     #     for y in new_ys:
     #         Y[str(y)] = y
     # iter = 0
-    # while len(Y) <= num_solutions // 2 and iter <= max_iters:
-    #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="leader_feasibility")[1]
+    # while len(Y) <= num_solutions and iter <= max_iters:
+    #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="leader")[1]
     #     for y in new_ys:
     #         Y[str(y)] = y
     
@@ -51,6 +51,8 @@ def solve_follower_HPR(instance, forbidden_Y, num_solutions, obj):
         obj_func = instance.c_leader @ x.values() + instance.c_follower @ y.values()
     elif obj == "follower":
         obj_func = instance.c_leader @ x.values() + instance.d @ y.values()
+    elif obj == "follower_only":
+        obj_func = instance.d @ y.values()
     elif obj == "leader_feasibility":
         obj_func = gp.quicksum(((instance.D[i][j] + instance.B[i][j]) * y[j]) for i in range(instance.Frows) for j in range(instance.Fcols))
     model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
