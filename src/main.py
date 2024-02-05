@@ -1,29 +1,20 @@
 import logging, logzero
 import argparse
 
+import constants
 from utils.parser import Parser
 
 from classes.decision_diagram import DecisionDiagram
 from decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
 
 from algorithms.algorithms_manager import AlgorithmsManager
-from algorithms.utils.solve_HPR import run as solve_HPR
-from algorithms.utils.solve_follower_problem import run as solve_follower_problem
-from algorithms.utils.solve_aux_problem import run as solve_aux_problem
+from algorithms.utils.solve_HPR import solve as solve_HPR
+from algorithms.utils.solve_follower_problem import solve as solve_follower_problem
+from algorithms.utils.solve_aux_problem import solve as solve_aux_problem
 from algorithms.utils.collect_Y import run as collect_Y
 
-## Parameters
-# General
-LOG_LEVEL = "INFO"
-# Compilation
-BUILD_METHOD = ["follower_leader"] #["follower_leader", "leader_follower", "iterative", "collect_Y"]
-MAX_WIDTH = [float("inf")]
-ORDERING_HEURISTIC = ["cost_competitive"] #["lhs_coeffs", "cost_leader", "cost_competitive", "leader_feasibility"]
-# Solver
-SOLVER_TIME_LIMIT = 3600
-
 # LogLevel
-logzero.loglevel(logging.getLevelName(LOG_LEVEL))
+logzero.loglevel(logging.getLevelName(constants.LOG_LEVEL))
 logger = logzero.logger
 
 def run(args):
@@ -37,19 +28,19 @@ def run(args):
     # Simulation
     instances = [args.instance_name]
     for instance_name in instances:
-        for max_width in MAX_WIDTH:
-            for ordering_heuristic in ORDERING_HEURISTIC:
-                for build_method in BUILD_METHOD: 
+        for max_width in constants.MAX_WIDTH:
+            for ordering_heuristic in constants.ORDERING_HEURISTIC:
+                for compilation_method in constants.COMPILATION_METHOD: 
                     # Load data
                     instance = parser.build_instance(instance_name)
                     # Get HPR bound
                     HPR_value, HPR_solution = solve_HPR(instance)
-                    _, y = solve_follower_problem(instance, HPR_solution["x"])
-                    _, y = solve_aux_problem(instance, HPR_solution["x"], instance.d @ y)
+                    _, y = solve_follower_problem(instance, HPR_solution["x"])  # Optimal follower response
+                    _, y = solve_aux_problem(instance, HPR_solution["x"], instance.d @ y)  # Break ties among optimal follower responses
 
-                    if build_method == "iterative":
+                    if compilation_method == "iterative":
                         ## Iterative compilation approach
-                        time_limit = int(SOLVER_TIME_LIMIT)
+                        time_limit = int(constants.SOLVER_TIME_LIMIT)
                         best_result = {"lower_bound": -float("inf")}
                         lb_tracking = list()
                         total_runtime = 0
@@ -60,16 +51,16 @@ def run(args):
                         x = vars["x"]
                         Y = [y]
 
-                        while total_runtime <= SOLVER_TIME_LIMIT:
+                        while total_runtime <= constants.SOLVER_TIME_LIMIT:
                             # Compile diagram
                             diagram = DecisionDiagram()
                             diagram_manager = DecisionDiagramManager()
                             diagram = diagram_manager.compile_diagram(
                                 diagram, instance, 
-                                build_method=build_method, max_width=max_width, 
+                                compilation_method=compilation_method, max_width=max_width, 
                                 ordering_heuristic=ordering_heuristic, Y=Y
                             )
-                            diagram.build_method = build_method
+                            diagram.compilation_method = compilation_method
 
                             # Solve reformulation
                             result, solution = algorithms_manager.run_DD_reformulation(
@@ -99,7 +90,7 @@ def run(args):
                         best_result["total_runtime"] = total_runtime
                         best_result["compilation_runtime"] = compilation_runtime
                         best_result["model_runtime"] = model_runtime
-                        best_result["time_limit"] = SOLVER_TIME_LIMIT
+                        best_result["time_limit"] = constants.SOLVER_TIME_LIMIT
                         best_result["lower_bound_tracking"] = lb_tracking
                         best_result["width"] = result["width"]
                         best_result["initial_width"] = result["initial_width"]
@@ -114,9 +105,9 @@ def run(args):
                         ## One-time compilation approach
                         diagram = DecisionDiagram()
                         diagram_manager = DecisionDiagramManager()
-                        Y = list()
+                        Y = [y]
                         # Build set Y
-                        if build_method == "collect_Y":
+                        if compilation_method == "collect_Y":
                             if instance not in Y_tracker:
                                 # Collect y's
                                 Y_length = 500
@@ -127,22 +118,28 @@ def run(args):
                                 collect_Y_runtime = Y_tracker[instance]["runtime"]
                         # Compile diagram
                         diagram = diagram_manager.compile_diagram(
-                            diagram, instance, build_method=build_method, max_width=max_width, 
+                            diagram, instance, compilation_method=compilation_method, max_width=max_width, 
                             ordering_heuristic=ordering_heuristic, 
-                            Y=None if build_method != "collect_Y" else Y
+                            Y=Y
                         )
-                        diagram.build_method = build_method
+                        diagram.compilation_method = compilation_method
                         # Solve reformulation
-                        result, solution = algorithms_manager.run_DD_reformulation(
-                            instance, diagram, time_limit=SOLVER_TIME_LIMIT - collect_Y_runtime,
-                            incumbent=None if build_method != "collect_Y" else {"x": HPR_solution["x"], "y": y}
-                        )
+                        if compilation_method == "compressed_leader":
+                            result, solution = algorithms_manager.run_DD_reformulation_with_compressed_leader(
+                                instance, diagram, time_limit=constants.SOLVER_TIME_LIMIT - collect_Y_runtime,
+                                incumbent=None
+                            )
+                        else:
+                            result, solution = algorithms_manager.run_DD_reformulation(
+                                instance, diagram, time_limit=constants.SOLVER_TIME_LIMIT - collect_Y_runtime,
+                                incumbent=None if compilation_method != "collect_Y" else {"x": HPR_solution["x"], "y": y}
+                            )
                         # Update final result
                         result["HPR"] = HPR_value
                         result["Y_length"] = None if not Y else len(Y)
                         result["Y_runtime"] = collect_Y_runtime
-                        result["total_runtime"] += collect_Y_runtime
-                        result["time_limit"] = SOLVER_TIME_LIMIT
+                        # result["total_runtime"] += collect_Y_runtime
+                        result["time_limit"] = constants.SOLVER_TIME_LIMIT
                         result["num_nodes"] = diagram.node_count + 2
                         result["num_arcs"] = diagram.arc_count
 
@@ -155,4 +152,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--instance_name", "-i", type=str)
     args = parser.parse_args()
+    args.instance_name = "miplib/stein2710"
     run(args)

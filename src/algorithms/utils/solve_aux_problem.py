@@ -1,6 +1,6 @@
 import gurobipy as gp
 
-def run(instance, x, objval):
+def solve(instance, x, objval):
     model = gp.Model()
     model.Params.OutputFlag = 0
 

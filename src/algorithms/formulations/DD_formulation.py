@@ -1,12 +1,12 @@
 import gurobipy as gp
 import numpy as np
 
-from algorithms.utils.solve_HPR import run as solve_HPR
+from algorithms.utils.solve_HPR import solve as solve_HPR
 
 def get_model(instance, diagram, time_limit, incumbent):
     Lcols = instance.Lcols
     Lrows = instance.Lrows
-    Fcols = instance.Lcols
+    Fcols = instance.Fcols
     Frows = instance.Frows
 
     A = instance.A
@@ -60,7 +60,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     # Flow constrs
     model.addConstr(gp.quicksum(w[arc.id] for arc in root_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in root_node.incoming_arcs) == 1, name="FlowRoot")
     model.addConstr(gp.quicksum(w[arc.id] for arc in sink_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in sink_node.incoming_arcs) == -1, name="FlowSink")
-    model.addConstrs((gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes.values() if node.id not in ["root", "sink"]), name="FlowAll")
+    model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes.values() if node.id not in ["root", "sink"])
 
     # Arc capacity constrs
     model.addConstrs((w[arc.id] <= x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 1), name="ArcCap1")

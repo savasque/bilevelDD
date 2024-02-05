@@ -20,6 +20,15 @@ class Parser:
             "rhs": np.array(model.getAttr("RHS", model.getConstrs())).astype(int),
             "obj": np.array(model.getAttr("Obj", model.getVars())).astype(int)
         }
+        # Turn all constrs sense into "<="
+
+        for i, constr in enumerate(model.getConstrs()):
+            if constr.sense == ">":
+                data["constrs"][i] = -data["constrs"][i]
+                data["rhs"][i] = -data["rhs"][i]
+            if constr.sense == "=":
+                data["constrs"] = np.vstack((data["constrs"], -data["constrs"][i]))
+                data["rhs"] = np.append(data["rhs"], -data["rhs"][i])
 
         return data
 

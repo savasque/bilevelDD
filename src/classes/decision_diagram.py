@@ -1,16 +1,15 @@
 class DecisionDiagram:
     def __init__(self):
-        self.nodes = dict()
-        self.arcs = list()
-        self.graph_map = dict()
-        self.compilation = None
-        self.max_width = None
-        self.ordering_heuristic = None
-        self.compilation_method = None
-        self.var_order = None
-        self.compilation_time = None
-        self.reduce_algorithm_time = None
-        self.initial_width = None
+        self.nodes = dict()  # {id: Node}
+        self.arcs = list()  # {(Node.id, Node.id): Arc}
+        self.graph_map = dict()  # {hash_key: Node}: Hast table mapping hash_key (node.state + node.layer) to an instance of Node
+        self.max_width = None  # Max width allowed when compiling the DD
+        self.ordering_heuristic = None  # Variable ordering
+        self.compilation_method = None  # follower_leader | leader_follower | collect_Y | compressed_leader
+        self.var_order = None  # {position (int): Node}
+        self.compilation_time = None  # Total time for retrieving the final DD
+        self.reduce_algorithm_time = None  # Time elapsed during the reduction algorithm by Bryant (1986)
+        self.initial_width = None  # DD width before executing the reduction algorithm
 
     @property
     def node_count(self):
@@ -62,7 +61,6 @@ class DecisionDiagram:
         return False
     
     def inherit_data(self, diagram):
-        self.compilation = diagram.compilation
         self.max_width = diagram.max_width
         self.ordering_heuristic = diagram.ordering_heuristic
         self.compilation_method = diagram.compilation_method

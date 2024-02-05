@@ -6,7 +6,8 @@ class Arc:
         self.value = value
         self.cost = cost
         self.var_index = var_index
-        self.player = player
+        self.player = player  # "leader" | "follower" | "dummy"
+        self.block_values = dict()
     
     def __repr__(self):
         return self.id

@@ -1,0 +1,1 @@
+MAX_NODE_COUNT = 1e6
