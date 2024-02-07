@@ -25,23 +25,17 @@ class DecisionDiagramManager:
             "iterative": self.compile_diagram_iteratively
         }
 
-    def compile_diagram(self, diagram, instance, compilation_method, max_width, ordering_heuristic, Y=list()):
-        if Y and compilation_method in ["collect_Y", "iterative"]:
-            diagram = self.compilation_methods["iterative"](diagram, instance, max_width, ordering_heuristic, Y)
-        else:
-            diagram = self.compilation_methods[compilation_method](diagram, instance, max_width, ordering_heuristic, Y)
-        
-        diagram.initial_width = int(diagram.width)
-        diagram.compilation_method = compilation_method
-
-        if compilation_method != "compressed_leader":
-            self.reduce_diagram(diagram)
+    def compile_diagram(self, diagram, instance, compilation_method, max_width, ordering_heuristic, HPR_optimal_response, Y=list()):
+        # if Y and compilation_method in ["collect_Y", "iterative"]:
+        #     diagram = self.compilation_methods["iterative"](diagram, instance, max_width, ordering_heuristic, Y)
+        # else:
+        diagram = self.compilation_methods[compilation_method](diagram, instance, max_width, ordering_heuristic, HPR_optimal_response, Y)
         
         return diagram
 
-    def compile_diagram_follower_then_leader(self, diagram, instance, max_width, ordering_heuristic, Y):
+    def compile_diagram_follower_then_leader(self, diagram, instance, max_width, ordering_heuristic, HPR_optimal_response, Y):
         compiler = FollowerThenLeaderCompiler(self.logger)
-        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, Y)
+        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, HPR_optimal_response, Y)
         
         return compiled_diagram
 
@@ -161,6 +155,7 @@ class DecisionDiagramManager:
 
         # Clean diagram
         clean_diagram = self.clean_diagram(diagram)
+        clean_diagram.initial_width = int(diagram.width)
 
         clean_diagram.compilation_runtime = time() - t0
 
@@ -356,8 +351,8 @@ class DecisionDiagramManager:
 
         return clean_diagram
 
-    def compile_diagram_follower_then_compressed_leader(self, diagram, instance, max_width, ordering_heuristic, Y):
+    def compile_diagram_follower_then_compressed_leader(self, diagram, instance, max_width, ordering_heuristic, HPR_optimal_response, Y):
         compiler = FollowerThenCompressedLeaderCompiler(self.logger)
-        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, Y)
+        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, HPR_optimal_response, Y)
         
         return compiled_diagram

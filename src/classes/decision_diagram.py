@@ -7,9 +7,9 @@ class DecisionDiagram:
         self.ordering_heuristic = None  # Variable ordering
         self.compilation_method = None  # follower_leader | leader_follower | collect_Y | compressed_leader
         self.var_order = None  # {position (int): Node}
-        self.compilation_time = None  # Total time for retrieving the final DD
-        self.reduce_algorithm_time = None  # Time elapsed during the reduction algorithm by Bryant (1986)
-        self.initial_width = None  # DD width before executing the reduction algorithm
+        self.compilation_runtime = 0  # Total time for retrieving the final DD
+        self.reduce_algorithm_runtime = 0  # Time elapsed during the reduction algorithm by Bryant (1986)
+        self.initial_width = 0  # DD width before executing the reduction algorithm
 
     @property
     def node_count(self):
@@ -46,6 +46,10 @@ class DecisionDiagram:
             node.outgoing_arcs = list()
 
     def is_solution_encoded(self, x, y):
+        """
+            This method indicates whether a solution (x, y) is encoded in the diagram. Only for follower-then-leader type of compilation
+        """
+        
         nodes = [self.nodes["root"]]
         while len(nodes):
             node = nodes.pop()
@@ -55,8 +59,6 @@ class DecisionDiagram:
                 if (arc.player == "follower" and arc.value == y[self.var_order["follower"][node.layer]])\
                 or (arc.player == "leader" and arc.value == x[self.var_order["leader"][node.layer - len(y)]]):
                     nodes.append(self.nodes[arc.head])
-            if not nodes:
-                a = None
         
         return False
     

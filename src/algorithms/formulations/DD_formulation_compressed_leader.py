@@ -65,6 +65,10 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstr(gp.quicksum(w[arc.id] for arc in sink_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in sink_node.incoming_arcs) == -1, name="FlowSink")
     model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes.values() if node.id not in ["root", "sink"])
 
+    # Capacity constrs
+    model.addConstrs(w[arc.id] <= y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
+    model.addConstrs(w[arc.id] <= 1 - y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
+
     # Dual feasibility
     model.addConstrs((pi[arc.tail] - pi[arc.head] <= arc.cost for arc in arcs if arc.player in ["follower", None]), name="DualFeasFollower")
     model.addConstrs((pi[arc.tail] - pi[arc.head] - gamma[arc.id] <= 0 for arc in arcs if arc.player == "leader"), name="DualFeasLeader")
@@ -81,8 +85,8 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_indices) for arc in arcs if arc.player == "leader")
 
     # Blocking definition
-    M_blocking = 1e6
-    model.addConstrs(C[i] @ x.values() >= -M_blocking + beta[arc.id, i] * (M_blocking + arc.block_values[i]) for arc in arcs if arc.player == "leader" for i in interaction_indices)
+    M_blocking = {i: sum(max(-C[i][j], 0) for j in range(Lcols)) for i in range(Frows)}
+    model.addConstrs(C[i] @ x.values() >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in arcs if arc.player == "leader" for i in interaction_indices)
 
     # Strengthening (Fischetti et al, 2017)
     for j in range(Fcols):

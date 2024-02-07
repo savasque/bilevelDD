@@ -17,18 +17,10 @@ class Parser:
         model = gp.read(file)
         data = {
             "constrs": np.array(model.getA().todense()).astype(int),
+            "sense": model.sense,
             "rhs": np.array(model.getAttr("RHS", model.getConstrs())).astype(int),
-            "obj": np.array(model.getAttr("Obj", model.getVars())).astype(int)
+            "obj": np.array(model.getAttr("Obj", model.getVars())).astype(int),
         }
-        # Turn all constrs sense into "<="
-
-        for i, constr in enumerate(model.getConstrs()):
-            if constr.sense == ">":
-                data["constrs"][i] = -data["constrs"][i]
-                data["rhs"][i] = -data["rhs"][i]
-            if constr.sense == "=":
-                data["constrs"] = np.vstack((data["constrs"], -data["constrs"][i]))
-                data["rhs"] = np.append(data["rhs"], -data["rhs"][i])
 
         return data
 
@@ -61,21 +53,56 @@ class Parser:
         # Fcols = [i for i in range(len(mps_file["obj"]) - aux_file["N"][0], len(mps_file["obj"]))]
         Fcols = aux_file["LC"]
 
+        A = [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
+        B = [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
+        C = mps_file["constrs"][Frows[0]:Frows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
+        D = mps_file["constrs"][Frows[0]:Frows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
+        a = [] if not Lrows else mps_file["rhs"][Lrows[0]:Lrows[-1] + 1]
+        b = mps_file["rhs"][Frows[0]:Frows[-1] + 1]
+        Lsense = [] if not Lrows else mps_file["sense"][Lrows[0]:Lrows[-1] + 1]
+        Fsense = mps_file["sense"][Frows[0]:Frows[-1] + 1]
+
+        # Turn all constrs sense into "<="
+        for i, sense in enumerate(Lsense):
+            if sense == ">":
+                A[i] = -A[i]
+                B[i] = -B[i]
+                a[i] = -a[i]
+            if sense == "=":
+                A = np.vstack((A, -A[i]))
+                B = np.vstack((B, -B[i]))
+                a = np.append(a, -a[i])
+        for i, sense in enumerate(Fsense):
+            if sense == ">":
+                C[i] = -C[i]
+                D[i] = -D[i]
+                b[i] = -b[i]
+            if sense == "=":
+                C = np.vstack((C, -C[i]))
+                D = np.vstack((D, -D[i]))
+                b = np.append(b, -b[i])
+
         data = {
             "id": file_name,
-            "A": [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1],
-            "B": [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1],
-            "C": mps_file["constrs"][Frows[0]:Frows[-1] + 1, Lcols[0]:Lcols[-1] + 1],
-            "D": mps_file["constrs"][Frows[0]:Frows[-1] + 1, Fcols[0]:Fcols[-1] + 1],
-            "a": [] if not Lrows else mps_file["rhs"][Lrows[0]:Lrows[-1] + 1],
-            "b": mps_file["rhs"][Frows[0]:Frows[-1] + 1],
+            "A": A,
+            "B": B,
+            "C": C,
+            "D": D,
+            "a": a,
+            "b": b,
             "c_leader": mps_file["obj"][Lcols[0]:Lcols[-1] + 1],
             "c_follower": mps_file["obj"][Fcols[0]:Fcols[-1] + 1],
             "d": np.array([i for i in aux_file["LO"]]),
         }
 
-        self.logger.info("Instance {} succesfully loaded.".format(file_name))
-        self.logger.debug(data)
+        self.logger.info("Instance {} succesfully loaded. LCols: {}, LRows: {}, FCols: {}, FRows: {}".format(
+            file_name,
+            len(Lcols),
+            len(Lrows),
+            len(Fcols),
+            len(Frows)
+        ))
+        # self.logger.debug(data)
 
         return Instance(file_name, data)
 

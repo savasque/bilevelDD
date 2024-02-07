@@ -1,8 +1,12 @@
+import sys
+sys.setrecursionlimit(1500)  #  TODO: rewrite the recursive filtering method in an iterative fashion
+
 from time import time
 from collections import deque
 
 from classes.node import Node
 from classes.decision_diagram import DecisionDiagram
+
 
 class Operations:
     def __init__(self, logger):
@@ -26,6 +30,8 @@ class Operations:
 
         # Traverse diagram bottom-up
         for layer in range(diagram.nodes["sink"].layer + 1)[::-1]:
+            # if diagram.compilation_method == "follower_then_compressed_leader" and layer == diagram.nodes["sink"].layer - 1:
+            #     continue
             # Create keys for each node in current layer
             Q = list()
             for u in v_list[layer]:
@@ -41,7 +47,7 @@ class Operations:
                     Q.append((key, u))
             Q.sort(key=lambda x: x[0])
 
-            # Merging process
+            # Merge nodes with equivalent keys
             old_key = (-1, -1)
             for idx, (key, u) in enumerate(Q):
                 # self.logger.debug("Processing layer {} ({}/{})".format(layer, idx + 1, len(Q)))
@@ -50,7 +56,7 @@ class Operations:
                     old_key = key
                     old_node = u
                 else:
-                    # Node can be merged. Take each incoming arc and redirect its head
+                    # Node can be merged. Take each incoming arc and redirect their heads
                     for in_arc in u.incoming_arcs:
                         in_arc.head = old_node.id
                         in_arc._update_id()
@@ -68,7 +74,7 @@ class Operations:
 
         diagram.reduce_algorithm_runtime = time() - t0
 
-        self.logger.info("Diagram succesfully reduced. Time elapsed: {} sec. Nodes: {} - Arcs: {} - Width: {}".format(time() - t0, len(diagram.nodes), len(diagram.arcs), diagram.width))
+        self.logger.info("Diagram succesfully reduced. Time elapsed: {} s - Nodes: {} - Arcs: {} - Width: {}".format(time() - t0, len(diagram.nodes), len(diagram.arcs), diagram.width))
 
     def ordering_heuristic(self, instance, ordering_heuristic):
         """
@@ -84,17 +90,23 @@ class Operations:
         if ordering_heuristic == "lhs_coeffs":
             self.logger.debug("Variable ordering heuristic: LHS coeffs")
             for j in range(instance.Fcols):
-                coeffs_sum = sum(instance.B[i][j] + instance.D[i][j] for i in range(instance.Frows))
+                if instance.B:
+                    coeffs_sum = sum(instance.B[i][j] + instance.D[i][j] for i in range(instance.Frows))
+                else:
+                    coeffs_sum = sum(instance.D[i][j] for i in range(instance.Frows))
                 order["follower"].append((j, coeffs_sum))
             for j in range(instance.Lcols):
-                coeffs_sum = sum(instance.A[i][j] + instance.C[i][j] for i in range(instance.Frows))
+                if instance.A:
+                    coeffs_sum = sum(instance.A[i][j] + instance.C[i][j] for i in range(instance.Frows))
+                else:
+                    coeffs_sum = sum(instance.C[i][j] for i in range(instance.Frows))
                 order["leader"].append((j, coeffs_sum))
             for key in order:  
                 order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
                 order[key] = [i[0] for i in order[key]]
 
         # Leader cost
-        elif ordering_heuristic == "cost_leader":
+        elif ordering_heuristic == "leader_cost":
             self.logger.debug("Variable ordering heuristic: leader cost")
             for j in range(instance.Fcols):
                 order["follower"].append((j, instance.c_follower[j]))
@@ -221,7 +233,7 @@ class Operations:
             clean_diagram.nodes[arc.tail].outgoing_arcs.append(arc)
             clean_diagram.nodes[arc.head].incoming_arcs.append(arc)
 
-        self.logger.debug("Bottom-up recusrion done. Time elapsed: {} s".format(time() - t0))
+        self.logger.debug("Bottom-up recursion done. Time elapsed: {} s".format(time() - t0))
 
         return clean_diagram
 

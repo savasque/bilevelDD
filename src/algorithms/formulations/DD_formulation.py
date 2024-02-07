@@ -75,12 +75,13 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstr(pi[root_node.id] == gp.quicksum(arc.cost * w[arc.id] for arc in arcs), name="StrongDualRoot")
     model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
     
-    # M -= solve_HPR(instance, obj="follower", sense="min")[0]
-    # model.addConstrs((lamda[arc.id] <= M * x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="StrongDual0")
-    # model.addConstrs((beta[arc.id] <= M * (1 - x[arc.var_index]) for arc in arcs if arc.player == "leader" and arc.value == 1), name="StrongDual1")
-
+    # Primal-dual linearization
     model.addConstrs((lamda[arc.id] <= (M - nodes[arc.tail].follower_cost) * x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="StrongDual0")
     model.addConstrs((beta[arc.id] <= (M - nodes[arc.tail].follower_cost) * (1 - x[arc.var_index]) for arc in arcs if arc.player == "leader" and arc.value == 1), name="StrongDual1")
+
+    # M -= solve_HPR(instance, obj="follower", sense="min")[0]
+    # model.addConstrs((lamda[arc.id] <= M * x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="Linearization0")
+    # model.addConstrs((beta[arc.id] <= M * (1 - x[arc.var_index]) for arc in arcs if arc.player == "leader" and arc.value == 1), name="Linearization1")
 
     # Strengthening (Fischetti et al, 2017)
     for j in range(Fcols):

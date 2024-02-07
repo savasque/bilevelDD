@@ -2,17 +2,19 @@ from time import time
 
 import gurobipy as gp
 
-def run(instance, num_solutions):
+def build(instance, num_solutions):
     t0 = time()
     Y = dict()
     max_iters = 1e6
     iter = 0
     while len(Y) <= num_solutions and iter <= max_iters:
         new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="follower")[1]
+        if not new_ys:
+            break
         for y in new_ys:
             Y[str(y)] = y
     # iter = 0
-    # while len(Y) <= 3 * num_solutions // 4 and iter <= max_iters:
+    # while len(Y) <= num_solutions and iter <= max_iters:
     #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="follower_only")[1]
     #     for y in new_ys:
     #         Y[str(y)] = y
@@ -59,13 +61,16 @@ def solve_follower_HPR(instance, forbidden_Y, num_solutions, obj):
 
     model.optimize()
 
-    Y = dict()
-    for i in range(num_solutions):
-        model.Params.solutionNumber = i
-        solution = model.getAttr("Xn")
-        y = [int(solution[j]) for j in range(instance.Lcols, instance.Lcols + instance.Fcols)]
-        Y[str(y)] = y
-    
-    Y = list(Y.values())
+    if model.status == 2:
+        Y = dict()
+        for i in range(model.SolCount):
+            model.Params.solutionNumber = i
+            solution = model.getAttr("Xn")
+            y = [int(solution[j]) for j in range(instance.Lcols, instance.Lcols + instance.Fcols)]
+            Y[str(y)] = y
         
-    return model.ObjVal, Y
+        Y = list(Y.values())
+        
+        return model.ObjVal, Y
+    else:
+        return None, list()

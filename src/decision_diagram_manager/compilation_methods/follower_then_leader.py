@@ -1,5 +1,6 @@
 from time import time
 from collections import deque
+import numpy as np
 
 from . import constants
 
@@ -14,7 +15,7 @@ class FollowerThenLeaderCompiler:
         self.logger = logger
         self.operations = Operations(logger)
 
-    def compile(self, diagram, instance, max_width, ordering_heuristic, Y):
+    def compile(self, diagram, instance, max_width, ordering_heuristic, HPR_optimal_response, Y):
         """
             This method compiles a DD, starting with the follower and continuing with the leader.
             
@@ -56,9 +57,10 @@ class FollowerThenLeaderCompiler:
         for i in range(instance.Frows):
             for j in range(instance.Lcols):
                 completion_bounds[i] += min(0, instance.C[i][j])
+                # completion_bounds[i] += HPR_solution["x"][j] * instance.C[i][j]
             for j in range(instance.Fcols):
                 completion_bounds[i] += min(0, instance.D[i][j])
-        self.logger.debug("Completion bounds for follower constrs: {}".format(completion_bounds)) 
+        # self.logger.debug("Completion bounds for follower constrs: {}".format(completion_bounds)) 
 
         ## Build layers ##   
         # Create new nodes and arcs
@@ -103,7 +105,7 @@ class FollowerThenLeaderCompiler:
                     if one_head.hash_key in diagram.graph_map:
                         found_node = diagram.nodes[diagram.graph_map[one_head.hash_key]]
                         if player == "follower":
-                            self.update_costs(node=found_node, new_node=one_head)
+                            self.operations.update_costs(node=found_node, new_node=one_head)
                         one_head = found_node
                     else:
                         diagram.add_node(one_head)
@@ -133,11 +135,17 @@ class FollowerThenLeaderCompiler:
 
         # Clean diagram
         clean_diagram = self.operations.clean_diagram(diagram)
+        clean_diagram.initial_width = int(clean_diagram.width)
+        clean_diagram.compilation_method = "follower_then_leader"
 
-        clean_diagram.compilation_runtime = time() - t0
-
-        self.logger.info("Diagram succesfully compiled. Time elapsed: {} - Node count: {} - Arc count: {} - Width: {}".format(
+        self.logger.info("Diagram succesfully compiled. Time elapsed: {} s - Node count: {} - Arc count: {} - Width: {}".format(
             time() - t0, clean_diagram.node_count + 2, clean_diagram.arc_count, clean_diagram.width
         ))
+
+        # Reduce diagram
+        self.operations.reduce_diagram(clean_diagram)
+
+        clean_diagram.compilation_runtime = time() - t0
+        self.logger.info("Finishing compilation process. Time elapsed: {} s".format(clean_diagram.compilation_runtime))
 
         return clean_diagram
