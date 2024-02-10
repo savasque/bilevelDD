@@ -1,5 +1,5 @@
 import sys
-sys.setrecursionlimit(1500)  #  TODO: rewrite the recursive filtering method in an iterative fashion
+sys.setrecursionlimit(2000)  #  TODO: rewrite the recursive filtering method in an iterative fashion
 
 from time import time
 from collections import deque

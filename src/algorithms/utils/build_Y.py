@@ -26,7 +26,7 @@ def build(instance, num_solutions):
     
     Y = list(Y.values())
 
-    return Y[:num_solutions], time() - t0
+    return Y[:num_solutions], round(time() - t0)
 
 def hamming_distance(y, y_2):
     return gp.quicksum(y[j] for j in y if y_2[j] == 0) + gp.quicksum(1 - y[j] for j in y if y_2[j] == 1)
@@ -47,6 +47,16 @@ def solve_follower_HPR(instance, forbidden_Y, num_solutions, obj):
 
     for y_2 in forbidden_Y.values():
         model.addConstr(hamming_distance(y, y_2) >= 1)
+
+    # Get known optimal y-values (Fischetti et al, 2017)
+    import numpy as np
+    known_y_values = dict()
+    for j in range(instance.Fcols):
+        if np.all([instance.D[i][j] <= 0 for i in range(instance.Frows)]) and instance.d[j] < 0:
+            known_y_values[j] = 1
+        elif np.all([instance.D[i][j] >= 0 for i in range(instance.Frows)]) and instance.d[j] > 0:
+            known_y_values[j] = 0
+    model.addConstrs(y[j] == val for j, val in known_y_values.items())
 
     # Objective function
     if obj == "leader":
