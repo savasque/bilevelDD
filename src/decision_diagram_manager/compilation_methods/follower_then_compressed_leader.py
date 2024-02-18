@@ -9,6 +9,7 @@ from classes.arc import Arc
 from decision_diagram_manager.operations import Operations
 
 from algorithms.utils.solve_HPR import solve as solve_HPR
+from algorithms.utils.solve_follower_problem import solve as solve_follower_problem
 
 class FollowerThenCompressedLeaderCompiler:
     def __init__(self, logger):
@@ -24,7 +25,7 @@ class FollowerThenCompressedLeaderCompiler:
         """
 
         t0 = time()
-        self.logger.info("Compiling diagram. Compilation method: compressed leader - MaxWidth: {}".format(max_width))
+        self.logger.info("Compiling diagram. Compilation method: compressed leader - MaxWidth: {} - VarOrder: {}".format(max_width, ordering_heuristic))
         var_order = self.operations.ordering_heuristic(instance, ordering_heuristic)
         # self.logger.debug("Variable ordering: {}".format(var_order))
         player = "follower"
@@ -39,12 +40,16 @@ class FollowerThenCompressedLeaderCompiler:
 
         # Create root and sink nodes
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
+        for i in range(instance.Frows):
+            if instance.interaction[i] == "leader":
+                root_node.state[i] = None
         diagram.add_node(root_node)
         sink_node = Node(id="sink", layer=instance.Fcols + 1)
         diagram.add_node(sink_node)
 
         # Create dummy arc or 1-width relaxation
-        M = solve_HPR(instance, obj="follower", sense="max")[0]
+        # M = solve_HPR(instance, obj="follower", sense="max")[0]
+        M, _ = solve_follower_problem(instance, sense="maximize")
         self.logger.debug("Big-M value: {}".format(M))
         dummy_arc = Arc(tail=root_node.id, head=sink_node.id, value=0, cost=M, var_index=-1, player=None)
         diagram.add_arc(dummy_arc)
@@ -128,21 +133,24 @@ class FollowerThenCompressedLeaderCompiler:
         #         next_layer_queue = deque()
 
 
-
-        ##### Then, start again, compile more y-solutions, and compile the corresponding x-compressed layers
+        ##### Compile y-solutions by binary branching
         self.logger.debug("Compiling new solutions")
 
         # Compute completion bounds for follower constrs
         completion_bounds = [0] * instance.Frows
         for i in range(instance.Frows):
-            for j in range(instance.Lcols):
-                completion_bounds[i] += min(0, instance.C[i][j])
-                # completion_bounds[i] += HPR_optimal_response["x"][j] * instance.C[i][j] 
-            for j in range(instance.Fcols):
-                completion_bounds[i] += min(0, instance.D[i][j])
+            if instance.interaction[i] == "leader":
+                completion_bounds[i] = None
+            else:
+                for j in range(instance.Lcols):
+                    # completion_bounds[i] += min(0, instance.C[i][j])
+                    completion_bounds[i] += HPR_optimal_response["x"][j] * instance.C[i][j] 
+                for j in range(instance.Fcols):
+                    completion_bounds[i] += min(0, instance.D[i][j])
         # self.logger.debug("Completion bounds for follower constrs: {}".format(completion_bounds)) 
 
         # Create new nodes and arcs
+        fixed_y_values = {j: False for j in range(instance.Fcols)}
         current_layer_queue.append(root_node)
         for layer in range(instance.Fcols + 1):
             next_layer_hash = dict()  # To avoid duplicates in next_layer_queue
@@ -166,6 +174,13 @@ class FollowerThenCompressedLeaderCompiler:
                     node = current_layer_queue.popleft()
                     zero_head = self.operations.create_zero_node(layer + 1, node)
                     one_head = self.operations.create_one_node(instance, layer + 1, var_index, node, player=player)
+
+                    # Remove fixed state components
+                    for i in range(instance.Frows):
+                        if instance.interaction[i] == "follower":
+                            if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
+                                zero_head.state[i] = None
+                                one_head.state[i] = None
 
                     # Zero head
                     if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and known_y_values.get(var_index) != 1:
@@ -206,6 +221,7 @@ class FollowerThenCompressedLeaderCompiler:
                         next_layer_hash[one_head.hash_key] = one_head
 
                 next_layer_queue = deque(next_layer_hash.values())
+                fixed_y_values[var_index] = True
 
             # Compile compressed leader layer
             else:
@@ -213,7 +229,7 @@ class FollowerThenCompressedLeaderCompiler:
                     node = current_layer_queue.popleft()
                     arc = Arc(tail=node.id, head=sink_node.id, value=0, cost=0, var_index=-1, player="leader")
                     for i in range(instance.Frows):
-                        if np.any(instance.C[i]) and np.any(instance.D[i]):
+                        if instance.interaction[i] == "both":
                             arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
                     diagram.add_arc(arc)
 
@@ -222,21 +238,22 @@ class FollowerThenCompressedLeaderCompiler:
 
             # Width limit
             if len(next_layer_queue) > max_width:
-                next_layer_queue = self.operations.reduced_queue(next_layer_queue, max_width, player=player)
+                next_layer_queue = self.operations.reduced_queue(instance, next_layer_queue, max_width, player)
 
             # Update queues
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
-        
 
 
-        ##### Extra, compile y-solutions within Y #####
-        self.logger.debug("Compiling y-solutions ({}) in set Y again".format(len(Y)))
+        ##### Compile y-solutions within Y #####
+        self.logger.debug("Compiling y-solutions ({}) in set Y".format(len(Y)))
         for idx, y in enumerate(Y):
+            self.logger.debug("Solution {}/{}".format(idx + 1, len(Y)))
+            fixed_y_values = {j: False for j in range(instance.Fcols)}
             child_node = root_node
             for layer in range(instance.Fcols):
                 var_index = var_order["follower"][layer]
-                self.logger.debug("Follower ({}/{}) layer for given solution: {} - Variable index: {} - Queue size: {}".format(idx + 1, len(Y), layer, var_index, len(current_layer_queue)))
+                # self.logger.debug("Follower ({}/{}) layer for given solution: {} - Variable index: {} - Queue size: {}".format(idx + 1, len(Y), layer, var_index, len(current_layer_queue)))
             
                 # Create nodes
                 if diagram.node_count < constants.MAX_NODE_COUNT:
@@ -245,6 +262,12 @@ class FollowerThenCompressedLeaderCompiler:
                         child_node = self.operations.create_zero_node(layer + 1, node)
                     else:
                         child_node = self.operations.create_one_node(instance, layer + 1, var_index, node, player="follower")
+
+                    # Remove fixed state components
+                    for i in range(instance.Frows):
+                        if instance.interaction[i] == "follower":
+                            if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
+                                child_node.state[i] = None
 
                     # Zero head
                     if y[var_index] == 0:
@@ -268,7 +291,7 @@ class FollowerThenCompressedLeaderCompiler:
                             if layer == instance.Fcols - 1:
                                 arc = Arc(tail=child_node.id, head=sink_node.id, value=0, cost=0, var_index=-1, player="leader")
                                 for i in range(instance.Frows):
-                                    if np.any(instance.C[i]) and np.any(instance.D[i]):
+                                    if instance.interaction[i] == "both":
                                         arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
                                 diagram.add_arc(arc)
                     
@@ -294,9 +317,11 @@ class FollowerThenCompressedLeaderCompiler:
                             if layer == instance.Fcols - 1:
                                 arc = Arc(tail=child_node.id, head=sink_node.id, value=0, cost=0, var_index=-1, player="leader")
                                 for i in range(instance.Frows):
-                                    if np.any(instance.C[i]) and np.any(instance.D[i]):
-                                        arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
+                                    if instance.interaction[i] == "both":
+                                        arc.block_values[i] = instance.b[i] - child_node.state[i] + 1 
                                 diagram.add_arc(arc)
+                    
+                    fixed_y_values[var_index] = True
 
         # Update in/outgoing arcs
         diagram.update_in_outgoing_arcs()

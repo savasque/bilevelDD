@@ -27,7 +27,7 @@ def get_model(instance, diagram, time_limit, incumbent):
 
     model = gp.Model()
     model.Params.TimeLimit = time_limit
-    M = solve_HPR(instance, obj="follower", sense="max")[0]
+    model.Params.IntegralityFocus = 1
 
     x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")
@@ -54,8 +54,8 @@ def get_model(instance, diagram, time_limit, incumbent):
     }
 
     # HPR constrs
-    model.addConstrs((gp.quicksum(A[i][j] * x[j] for j in range(Lcols)) + gp.quicksum(B[i][j] * y[j] for j in range(Fcols)) <= a[i] for i in range(Lrows)), name="LeaderHPR")
-    model.addConstrs((gp.quicksum(C[i][j] * x[j] for j in range(Lcols)) + gp.quicksum(D[i][j] * y[j] for j in range(Fcols)) <= b[i] for i in range(Frows)), name="FollowerHPR")
+    model.addConstrs((A[i] @ x.values() + B[i] @ y.values() <= a[i] for i in range(Lrows)), name="LeaderHPR")
+    model.addConstrs((C[i] @ x.values() + D[i] @ y.values() <= b[i] for i in range(Frows)), name="FollowerHPR")
 
     # Value-function constr
     model.addConstr(gp.quicksum(d[j] * y[j] for j in range(Fcols)) <= gp.quicksum(arc.cost * w[arc.id] for arc in arcs), name="ValueFunction")
@@ -85,8 +85,11 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_indices) for arc in arcs if arc.player == "leader")
 
     # Blocking definition
-    M_blocking = {i: sum(max(-C[i][j], 0) for j in range(Lcols)) for i in range(Frows)}
-    model.addConstrs(C[i] @ x.values() >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in arcs if arc.player == "leader" for i in interaction_indices)
+    M_blocking = {i: -sum(min(C[i][j], 0) for j in range(Lcols)) for i in range(Frows)}
+    model.addConstrs(
+        C[i] @ x.values() >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) 
+        for arc in arcs if arc.player == "leader" for i in interaction_indices
+    )
 
     # Strengthening (Fischetti et al, 2017)
     for j in range(Fcols):
@@ -96,7 +99,7 @@ def get_model(instance, diagram, time_limit, incumbent):
             model.addConstr(y[j] == 0)
 
     # Objective function
-    obj = gp.quicksum(c_leader[j] * x[j] for j in range(Lcols)) + gp.quicksum(c_follower[j] * y[j] for j in range(Fcols))
+    obj = c_leader @ x.values() + c_follower @ y.values()
     model.setObjective(obj, sense=gp.GRB.MINIMIZE)
 
     return model, vars

@@ -3,6 +3,7 @@ sys.setrecursionlimit(2000)  #  TODO: rewrite the recursive filtering method in 
 
 from time import time
 from collections import deque
+import numpy as np
 
 from classes.node import Node
 from classes.decision_diagram import DecisionDiagram
@@ -139,18 +140,43 @@ class Operations:
             order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
             order["leader"] = [i[0] for i in order["leader"]]
                 
-        
-        else:
+        elif ordering_heuristic == "lexicographic":
             self.logger.debug("Variable ordering heuristic: lexicographic")
             order["follower"] = [i for i in range(instance.Fcols)]
+            order["leader"] = [i for i in range(instance.Lcols)]
+
+        elif ordering_heuristic == "max_connected_degree":
+            # Select follower variable with the most appearances in D
+            degree_sequence = {j: 0 for j in range(instance.Fcols)}
+            for i in range(instance.Frows):
+                for j in range(instance.Fcols):
+                    if instance.D[i][j] != 0:
+                        if np.all([instance.C[i][j] == 0 for j in range(instance.Lcols)]):  # Only follower constrs
+                            degree_sequence[j] += 1
+            order["follower"].append(max(degree_sequence.items(), key=lambda x: x[1])[0])
+            remaining_columns = [i for i in range(instance.Fcols) if i != order["follower"][0]]
+            # Select follower variable with the most appearances in D where the last column also appears
+            while remaining_columns:
+                degree_sequence = {j: [None, 0, 0] for j in remaining_columns}  # [idx, joint appearances, degree]
+                last_column = order["follower"][-1]
+                for i in range(instance.Frows):
+                    for idx, j in enumerate(remaining_columns):
+                        degree_sequence[j][0] = idx
+                        if instance.D[i][j] != 0 and np.all([instance.C[i][j] == 0 for j in range(instance.Lcols)]):  # Only follower constrs
+                            degree_sequence[j][2] += 1  # Degree
+                            if instance.D[i][last_column] != 0:
+                                degree_sequence[j][1] += 1  # Joint appearance
+                column = max(degree_sequence.items(), key=lambda x: (x[1][1], x[1][2]))
+                order["follower"].append(column[0])
+                remaining_columns.pop(column[1][0])
             order["leader"] = [i for i in range(instance.Lcols)]
 
         return order
 
     def create_zero_node(self, layer, parent_node):
-        node = Node(id=None, layer=layer, state=parent_node.state)
-        node.leader_cost = parent_node.leader_cost
-        node.follower_cost = parent_node.follower_cost
+        node = Node(id=None, layer=layer, state=list(parent_node.state))
+        node.leader_cost = float(parent_node.leader_cost)
+        node.follower_cost = float(parent_node.follower_cost)
 
         return node
 
@@ -158,20 +184,21 @@ class Operations:
         node = Node(id=None, layer=layer, state=list(parent_node.state))
         if player == "follower":
             for i in range(instance.Frows):
-                node.state[i] += instance.D[i][var_index]
+                if node.state[i] != None:
+                    node.state[i] += instance.D[i][var_index]
             node.leader_cost = parent_node.leader_cost + instance.c_follower[var_index]
             node.follower_cost = parent_node.follower_cost + instance.d[var_index]
         else:
             for i in range(instance.Frows):
                 node.state[i] += instance.C[i][var_index]
             node.leader_cost = parent_node.leader_cost + instance.c_leader[var_index]
-            node.follower_cost = parent_node.follower_cost
+            node.follower_cost = float(parent_node.follower_cost)
 
         return node
 
     def check_completion_bounds(self, instance, completion_bounds, node):
         for i in range(instance.Frows):
-            if node.state[i] + completion_bounds[i] > instance.b[i]:
+            if node.state[i] != None and node.state[i] + completion_bounds[i] > instance.b[i]:
                 return False
         
         return True
@@ -190,22 +217,45 @@ class Operations:
             
     def update_completions_bounds(self, instance, completion_bounds, var_index, player):
         for i in range(instance.Frows):
-            if player == "follower":
-                completion_bounds[i] -= min(0, instance.D[i][var_index])
-            elif player == "leader":
-                completion_bounds[i] -= min(0, instance.C[i][var_index])
+            if completion_bounds[i] != None:
+                if player == "follower":
+                    completion_bounds[i] -= min(0, instance.D[i][var_index])
+                elif player == "leader":
+                    completion_bounds[i] -= min(0, instance.C[i][var_index])
 
     def update_costs(self, node, new_node):
         node.leader_cost = min(node.leader_cost, new_node.leader_cost)
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
 
-    def reduced_queue(self, queue, max_width, player):
+    def reduced_queue(self, instance, queue, max_width, player):
         if player == "follower":
-            queue = sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost))  # Sort nodes in ascending order # TODO: remove int
+            sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))  # Sort nodes in ascending order # TODO: remove int
         else:
-            queue = sorted(queue, key=lambda x: x.leader_cost)  # Sort nodes in ascending order
+            sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
+
+        filtered_queue = deque([sorted_queue.popleft()])
+        for node in sorted_queue:
+            if self.check_diversity_criterion(instance, filtered_queue, node):
+                filtered_queue.append(node)
+            if len(filtered_queue) == max_width:
+                break
         
-        return deque(queue[:max_width])
+        return filtered_queue
+
+    def check_diversity_criterion(self, instance, nodes, new_node):
+        for node in nodes:
+            if self.blocking_distance(instance, node, new_node) <= 0:
+                return False
+        
+        return True
+    
+    def blocking_distance(self, instance, node_1, node_2):
+        distance = 0
+        for i in range(instance.Frows):
+            if node_1.state[i] != None and instance.interaction[i] == "both" and node_1.state[i] < node_2.state[i]:
+                distance += 1
+
+        return distance
 
     def clean_diagram(self, diagram):
         t0 = time()

@@ -14,3 +14,4 @@ class Instance:
         self.Lrows = len(self.a)
         self.Fcols = len(self.c_follower)
         self.Frows = len(self.b)
+        self.interaction = dict()

@@ -1,6 +1,6 @@
 import gurobipy as gp
 
-def solve(instance, obj="leader", sense="min"):
+def solve(instance, obj="leader", sense="minimize"):
     model = gp.Model()
     model.Params.OutputFlag = 0
 
@@ -16,7 +16,7 @@ def solve(instance, obj="leader", sense="min"):
         obj_func = instance.c_leader @ x.values() + instance.c_follower @ y.values()
     elif obj == "follower":
         obj_func = instance.d @ y.values()
-    model.setObjective(obj_func, sense=gp.GRB.MINIMIZE if sense == "min" else gp.GRB.MAXIMIZE)
+    model.setObjective(obj_func, sense=gp.GRB.MINIMIZE if sense == "minimize" else gp.GRB.MAXIMIZE)
 
     model.optimize()
 

@@ -1,37 +1,52 @@
 from time import time
+import numpy as np
 
 import gurobipy as gp
 
 def build(instance, num_solutions):
     t0 = time()
+    X = dict()
     Y = dict()
-    max_iters = 1e6
-    iter = 0
-    while len(Y) <= num_solutions and iter <= max_iters:
-        new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="follower")[1]
+
+    # while len(Y) < num_solutions // 2 and time() - t0 <= 300:
+    #     _, new_xs, new_ys = solve_follower_HPR(instance, X, Y, num_solutions=num_solutions // 2 - len(Y), obj="other")
+    #     if not new_ys:
+    #         break
+    #     for x in new_xs:
+    #         X[str(x)] = x
+    #     for y in new_ys:
+    #         Y[str(y)] = y
+    #     print(len(Y))
+
+    # while len(Y) < num_solutions and time() - t0 <= 300:
+    #     _, new_xs, new_ys = solve_follower_HPR(instance, X, Y, num_solutions=num_solutions - len(Y), obj="leader")
+    #     if not new_ys:
+    #         break
+    #     for x in new_xs:
+    #         X[str(x)] = x
+    #     for y in new_ys:
+    #         Y[str(y)] = y
+    #     print(len(Y))
+
+    while len(Y) < num_solutions and time() - t0 <= 60:
+        _, new_xs, new_ys = solve_follower_HPR(instance, X, Y, num_solutions=num_solutions - len(Y), obj="leader")
         if not new_ys:
             break
+        for x in new_xs:
+            X[str(x)] = x
         for y in new_ys:
             Y[str(y)] = y
-    # iter = 0
-    # while len(Y) <= num_solutions and iter <= max_iters:
-    #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="follower_only")[1]
-    #     for y in new_ys:
-    #         Y[str(y)] = y
-    # iter = 0
-    # while len(Y) <= num_solutions and iter <= max_iters:
-    #     new_ys = solve_follower_HPR(instance, Y, num_solutions=num_solutions, obj="leader")[1]
-    #     for y in new_ys:
-    #         Y[str(y)] = y
+        print(len(Y))
     
+    X = list(X.values())
     Y = list(Y.values())
 
     return Y[:num_solutions], round(time() - t0)
 
-def hamming_distance(y, y_2):
-    return gp.quicksum(y[j] for j in y if y_2[j] == 0) + gp.quicksum(1 - y[j] for j in y if y_2[j] == 1)
+def hamming_distance(v, v_2):
+    return gp.quicksum(v[j] for j in v if v_2[j] == 0) + gp.quicksum(1 - v[j] for j in v if v_2[j] == 1)
 
-def solve_follower_HPR(instance, forbidden_Y, num_solutions, obj):
+def solve_follower_HPR(instance, forbidden_X, forbidden_Y, num_solutions, obj):
     model = gp.Model()
     model.Params.OutputFlag = 0
 
@@ -40,16 +55,24 @@ def solve_follower_HPR(instance, forbidden_Y, num_solutions, obj):
 
     x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+    t = model.addVar(lb=-gp.GRB.INFINITY, name="t")
+    tau = model.addVars(instance.Frows, lb=-gp.GRB.INFINITY, name="tau")
 
     # HPR constrs
-    model.addConstrs(gp.quicksum(instance.A[i][j] * x[j] for j in range(instance.Lcols)) + gp.quicksum(instance.B[i][j] * y[j] for j in range(instance.Fcols)) <= instance.a[i] for i in range(instance.Lrows))
-    model.addConstrs(gp.quicksum(instance.C[i][j] * x[j] for j in range(instance.Lcols)) + gp.quicksum(instance.D[i][j] * y[j] for j in range(instance.Fcols)) <= instance.b[i] for i in range(instance.Frows))
+    model.addConstrs(instance.A[i] @ x.values() + instance.B[i] @ y.values() <= instance.a[i] for i in range(instance.Lrows))
+    model.addConstrs(instance.C[i] @ x.values() + instance.D[i] @ y.values() <= instance.b[i] for i in range(instance.Frows))
 
+    # Avoid repeating solutions
+    for x_2 in forbidden_X.values():
+        model.addConstr(hamming_distance(x, x_2) >= 1)
     for y_2 in forbidden_Y.values():
         model.addConstr(hamming_distance(y, y_2) >= 1)
 
+    # t and tau definitions
+    model.addConstrs(tau[i] >= instance.D[i] @ y.values() for i in range(instance.Frows))
+    model.addConstrs(t >= tau[i] for i in range(instance.Frows))
+
     # Get known optimal y-values (Fischetti et al, 2017)
-    import numpy as np
     known_y_values = dict()
     for j in range(instance.Fcols):
         if np.all([instance.D[i][j] <= 0 for i in range(instance.Frows)]) and instance.d[j] < 0:
@@ -66,21 +89,27 @@ def solve_follower_HPR(instance, forbidden_Y, num_solutions, obj):
     elif obj == "follower_only":
         obj_func = instance.d @ y.values()
     elif obj == "leader_feasibility":
-        obj_func = gp.quicksum(((instance.D[i][j] + instance.B[i][j]) * y[j]) for i in range(instance.Frows) for j in range(instance.Fcols))
+        obj_func = gp.quicksum((instance.D[i] @ y.values()) for i in range(instance.Frows))
+    elif obj == "other":
+        obj_func = t + .00001 * gp.quicksum(tau[i] for i in range(instance.Frows)) + .00001 * instance.d @ y.values()
     model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
 
     model.optimize()
 
     if model.status == 2:
+        X = dict()
         Y = dict()
         for i in range(model.SolCount):
             model.Params.solutionNumber = i
             solution = model.getAttr("Xn")
+            x = [int(solution[j]) for j in range(instance.Lcols)]
             y = [int(solution[j]) for j in range(instance.Lcols, instance.Lcols + instance.Fcols)]
+            X[str(x)] = x
             Y[str(y)] = y
         
+        X = list(X.values())
         Y = list(Y.values())
         
-        return model.ObjVal, Y
+        return model.ObjVal, X, Y
     else:
-        return None, list()
+        return None, list(), list()

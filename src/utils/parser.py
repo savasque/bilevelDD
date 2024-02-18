@@ -102,9 +102,20 @@ class Parser:
             len(Fcols),
             len(Frows)
         ))
-        # self.logger.debug(data)
 
-        return Instance(file_name, data)
+        instance = Instance(file_name, data)
+        
+        # Compute interaction in follower constrs
+        for i in range(len(Frows)):
+            if np.any([C[i][j] != 0 for j in range(len(Lcols))]):
+                if np.any([D[i][j] != 0 for j in range(len(Fcols))]):
+                    instance.interaction[i] = "both"
+                else:
+                    instance.interaction[i] = "leader"
+            else:
+                instance.interaction[i] = "follower"
+
+        return instance
 
     def write_results(self, result, name):
         new_result = pd.DataFrame([result], index=["instance"])
