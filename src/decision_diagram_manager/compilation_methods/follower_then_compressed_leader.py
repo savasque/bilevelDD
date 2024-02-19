@@ -37,6 +37,7 @@ class FollowerThenCompressedLeaderCompiler:
         # Queues of nodes
         current_layer_queue = deque()
         next_layer_queue = deque()
+        remaining_queues = dict()
 
         # Create root and sink nodes
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
@@ -157,11 +158,22 @@ class FollowerThenCompressedLeaderCompiler:
 
             # Width limit
             if len(next_layer_queue) > max_width:
-                next_layer_queue = self.operations.reduced_queue(instance, next_layer_queue, max_width, player)
+                next_layer_queue, remaining_queues[layer] = self.operations.reduced_queue(instance, next_layer_queue, max_width, player)
 
             # Update queues
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
+        
+        # Update in/outgoing arcs
+        diagram.update_in_outgoing_arcs()
+        # Clean diagram
+        diagram = self.operations.clean_diagram(diagram)
+
+
+        ##### Use remaining queues #####
+        if diagram.width < max_width:
+            for layer, current_layer_queue in remaining_queues.items():
+                a = None
 
 
         ##### Compile y-solutions within Y #####
@@ -253,9 +265,6 @@ class FollowerThenCompressedLeaderCompiler:
         self.logger.info("Diagram succesfully compiled. Time elapsed: {} s - Node count: {} - Arc count: {} - Width: {}".format(
             time() - t0, clean_diagram.node_count + 2, clean_diagram.arc_count, clean_diagram.width
         ))
-
-        # # Reduce diagram
-        # self.operations.reduce_diagram(clean_diagram)
 
         clean_diagram.compilation_runtime = time() - t0
         self.logger.info("Finishing compilation process. Time elapsed: {} s".format(clean_diagram.compilation_runtime))

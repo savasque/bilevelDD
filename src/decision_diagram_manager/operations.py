@@ -140,15 +140,21 @@ class Operations:
             order["leader"] = [i for i in range(instance.Lcols)]
 
         elif ordering_heuristic == "max_connected_degree":
-            # Select follower variable with the most appearances in D
-            degree_sequence = {j: 0 for j in range(instance.Fcols)}
+            # Select follower variables with known value
+            order["follower"] = [j for j in instance.known_y_values]
+            remaining_columns = [j for j in range(instance.Fcols) if j not in instance.known_y_values]
+
+            # Select follower variable with more appearances in D together with the already included variables
+            degree_sequence = {j: 0 for j in remaining_columns}
             for i in range(instance.Frows):
-                for j in range(instance.Fcols):
-                    if instance.D[i][j] != 0:
-                        if instance.interaction[i] == "follower":  # Only follower constrs
-                            degree_sequence[j] += 1
+                for j in remaining_columns:
+                    if instance.D[i][j] != 0 and instance.interaction[i] == "follower": 
+                        degree_sequence[j] += 1
+                        for k in instance.known_y_values:
+                            if instance.D[i][k] != 0:
+                                degree_sequence[j] += 1
             order["follower"].append(max(degree_sequence.items(), key=lambda x: x[1])[0])
-            remaining_columns = [i for i in range(instance.Fcols) if i != order["follower"][0]]
+            remaining_columns = [i for i in range(instance.Fcols) if i != order["follower"][-1]]
 
             # Select follower variable with the most appearances in D where the last column also appears
             while remaining_columns:
@@ -164,6 +170,7 @@ class Operations:
                 column = max(degree_sequence.items(), key=lambda x: (x[1][1], x[1][2]))
                 order["follower"].append(column[0])
                 remaining_columns.pop(column[1][0])
+
             order["leader"] = [i for i in range(instance.Lcols)]
 
         return order
@@ -229,13 +236,14 @@ class Operations:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 
         filtered_queue = deque([sorted_queue.popleft()])
+        remainining_queue = deque()
         for node in sorted_queue:
-            if self.check_diversity_criterion(instance, filtered_queue, node):
+            if self.check_diversity_criterion(instance, filtered_queue, node) and len(filtered_queue) < max_width:
                 filtered_queue.append(node)
-            if len(filtered_queue) == max_width:
-                break
+            else:
+                remainining_queue.append(node)
         
-        return filtered_queue
+        return filtered_queue, remainining_queue
 
     def check_diversity_criterion(self, instance, nodes, new_node):
         for node in nodes:
