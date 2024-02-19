@@ -21,9 +21,6 @@ def run(args):
     parser = Parser()
     algorithms_manager = AlgorithmsManager()
 
-    Y_tracker = dict()
-    collect_Y_runtime = 0
-
     # Simulation
     if type(args.instance_name) != list:
         instances = [args.instance_name]

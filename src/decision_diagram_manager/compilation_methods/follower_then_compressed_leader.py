@@ -54,85 +54,7 @@ class FollowerThenCompressedLeaderCompiler:
         dummy_arc = Arc(tail=root_node.id, head=sink_node.id, value=0, cost=M, var_index=-1, player=None)
         diagram.add_arc(dummy_arc)
 
-        # Get known optimal y-values (Fischetti et al, 2017)
-        known_y_values = dict()
-        for j in range(instance.Fcols):
-            if np.all([instance.D[i][j] <= 0 for i in range(instance.Frows)]) and instance.d[j] < 0:
-                known_y_values[j] = 1
-            elif np.all([instance.D[i][j] >= 0 for i in range(instance.Frows)]) and instance.d[j] > 0:
-                known_y_values[j] = 0
-
         ##### Build layers #####
-
-        # ##### First, compile y-solutions within Y
-        # self.logger.debug("Compiling y-solutions ({}) in set Y".format(len(Y)))
-        # for idx, y in enumerate(Y):
-        #     current_layer_queue.append(root_node)
-        #     for layer in range(instance.Fcols):
-        #         next_layer_hash = dict()
-        #         var_index = var_order["follower"][layer]
-        #         self.logger.debug("Follower ({}/{}) layer for given solution: {} - Variable index: {} - Queue size: {}".format(idx + 1, len(Y), layer, var_index, len(current_layer_queue)))
-            
-        #         # Create nodes
-        #         while len(current_layer_queue) and diagram.node_count < constants.MAX_NODE_COUNT:
-        #             node = current_layer_queue.popleft()
-        #             if y[var_index] == 0:
-        #                 child_node = self.operations.create_zero_node(layer + 1, node)
-        #             else:
-        #                 child_node = self.operations.create_one_node(instance, layer + 1, var_index, node, player="follower")
-
-        #             # Zero head
-        #             if y[var_index] == 0:
-        #                 child_node.id = diagram.node_count + 1
-        #                 # Check if node was already created
-        #                 if child_node.hash_key in diagram.graph_map:
-        #                     found_node = diagram.nodes[diagram.graph_map[child_node.hash_key]]
-        #                     self.operations.update_costs(node=found_node, new_node=child_node)
-        #                     next_layer_queue.append(found_node)
-        #                     child_node = found_node
-        #                     if node.hash_key not in diagram.graph_map:
-        #                         # Create arc
-        #                         arc = Arc(tail=node.id, head=child_node.id, value=0, cost=0, var_index=var_index, player="follower")
-        #                         diagram.add_arc(arc)
-        #                 else:
-        #                     diagram.add_node(child_node)
-        #                     next_layer_queue.append(child_node)
-        #                     # Create arc
-        #                     arc = Arc(tail=node.id, head=child_node.id, value=0, cost=0, var_index=var_index, player="follower")
-        #                     diagram.add_arc(arc)
-        #                 next_layer_hash[child_node.hash_key] = child_node
-                    
-        #             # One head
-        #             else:
-        #                 child_node.id = diagram.node_count + 1
-        #                 # Check if node was already created
-        #                 if child_node.hash_key in diagram.graph_map:
-        #                     found_node = diagram.nodes[diagram.graph_map[child_node.hash_key]]
-        #                     self.operations.update_costs(node=found_node, new_node=child_node)
-        #                     next_layer_queue.append(found_node)
-        #                     child_node = found_node
-        #                     if node.hash_key not in diagram.graph_map:
-        #                         # Create arc
-        #                         arc = Arc(tail=node.id, head=child_node.id, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
-        #                         diagram.add_arc(arc)
-        #                 else:
-        #                     diagram.add_node(child_node)
-        #                     next_layer_queue.append(child_node)
-        #                     # Create arc
-        #                     arc = Arc(tail=node.id, head=child_node.id, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
-        #                     diagram.add_arc(arc)
-        #                 next_layer_hash[child_node.hash_key] = child_node
-
-        #         # Width limit
-        #         next_layer_queue = deque(next_layer_hash.values())
-        #         if len(next_layer_queue) > max_width:
-        #             next_layer_queue = self.reduced_queue(next_layer_queue, max_width, player="follower")
-                
-        #         # Update queues
-        #         current_layer_queue = next_layer_queue
-        #         next_layer_queue = deque()
-
-
         ##### Compile y-solutions by binary branching
         self.logger.debug("Compiling new solutions")
 
@@ -143,18 +65,15 @@ class FollowerThenCompressedLeaderCompiler:
                 completion_bounds[i] = None
             else:
                 for j in range(instance.Lcols):
-                    # completion_bounds[i] += min(0, instance.C[i][j])
-                    completion_bounds[i] += HPR_optimal_response["x"][j] * instance.C[i][j] 
+                    completion_bounds[i] += min(0, instance.C[i][j])
+                    # completion_bounds[i] += HPR_optimal_response["x"][j] * instance.C[i][j] 
                 for j in range(instance.Fcols):
                     completion_bounds[i] += min(0, instance.D[i][j])
-        # self.logger.debug("Completion bounds for follower constrs: {}".format(completion_bounds)) 
 
         # Create new nodes and arcs
         fixed_y_values = {j: False for j in range(instance.Fcols)}
         current_layer_queue.append(root_node)
         for layer in range(instance.Fcols + 1):
-            next_layer_hash = dict()  # To avoid duplicates in next_layer_queue
-
             # Choose player
             if layer >= instance.Fcols:
                 player = "leader"
@@ -183,7 +102,7 @@ class FollowerThenCompressedLeaderCompiler:
                                 one_head.state[i] = None
 
                     # Zero head
-                    if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and known_y_values.get(var_index) != 1:
+                    if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and instance.known_y_values.get(var_index) != 1:
                         zero_head.id = diagram.node_count + 1
                         # Check if node was already created
                         if zero_head.hash_key in diagram.graph_map:
@@ -199,10 +118,10 @@ class FollowerThenCompressedLeaderCompiler:
                             # Create arc
                             arc = Arc(tail=node.id, head=zero_head.id, value=0, cost=0, var_index=var_index, player="follower")
                             diagram.add_arc(arc)
-                        next_layer_hash[zero_head.hash_key] = zero_head
+                            next_layer_queue.append(zero_head)
                     
                     # One head
-                    if self.operations.check_completion_bounds(instance, completion_bounds, one_head) and known_y_values.get(var_index) != 0:
+                    if self.operations.check_completion_bounds(instance, completion_bounds, one_head) and instance.known_y_values.get(var_index) != 0:
                         one_head.id = diagram.node_count + 1
                         # Check if node was already created
                         if one_head.hash_key in diagram.graph_map:
@@ -218,9 +137,9 @@ class FollowerThenCompressedLeaderCompiler:
                             # Create arc
                             arc = Arc(tail=node.id, head=one_head.id, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
                             diagram.add_arc(arc)
-                        next_layer_hash[one_head.hash_key] = one_head
+                            next_layer_queue.append(one_head)
 
-                next_layer_queue = deque(next_layer_hash.values())
+                # next_layer_queue = deque(next_layer_hash.values())
                 fixed_y_values[var_index] = True
 
             # Compile compressed leader layer

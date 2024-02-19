@@ -91,16 +91,10 @@ class Operations:
         if ordering_heuristic == "lhs_coeffs":
             self.logger.debug("Variable ordering heuristic: LHS coeffs")
             for j in range(instance.Fcols):
-                if instance.B:
-                    coeffs_sum = sum(instance.B[i][j] + instance.D[i][j] for i in range(instance.Frows))
-                else:
-                    coeffs_sum = sum(instance.D[i][j] for i in range(instance.Frows))
+                coeffs_sum = sum(instance.D[i][j] for i in range(instance.Frows) if instance.interaction[i] == "both")
                 order["follower"].append((j, coeffs_sum))
             for j in range(instance.Lcols):
-                if instance.A:
-                    coeffs_sum = sum(instance.A[i][j] + instance.C[i][j] for i in range(instance.Frows))
-                else:
-                    coeffs_sum = sum(instance.C[i][j] for i in range(instance.Frows))
+                coeffs_sum = sum(instance.C[i][j] for i in range(instance.Frows))
                 order["leader"].append((j, coeffs_sum))
             for key in order:  
                 order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
@@ -151,10 +145,11 @@ class Operations:
             for i in range(instance.Frows):
                 for j in range(instance.Fcols):
                     if instance.D[i][j] != 0:
-                        if np.all([instance.C[i][j] == 0 for j in range(instance.Lcols)]):  # Only follower constrs
+                        if instance.interaction[i] == "follower":  # Only follower constrs
                             degree_sequence[j] += 1
             order["follower"].append(max(degree_sequence.items(), key=lambda x: x[1])[0])
             remaining_columns = [i for i in range(instance.Fcols) if i != order["follower"][0]]
+
             # Select follower variable with the most appearances in D where the last column also appears
             while remaining_columns:
                 degree_sequence = {j: [None, 0, 0] for j in remaining_columns}  # [idx, joint appearances, degree]
@@ -162,7 +157,7 @@ class Operations:
                 for i in range(instance.Frows):
                     for idx, j in enumerate(remaining_columns):
                         degree_sequence[j][0] = idx
-                        if instance.D[i][j] != 0 and np.all([instance.C[i][j] == 0 for j in range(instance.Lcols)]):  # Only follower constrs
+                        if instance.D[i][j] != 0 and instance.interaction[i] == "follower":  # Only follower constrs
                             degree_sequence[j][2] += 1  # Degree
                             if instance.D[i][last_column] != 0:
                                 degree_sequence[j][1] += 1  # Joint appearance
@@ -244,7 +239,7 @@ class Operations:
 
     def check_diversity_criterion(self, instance, nodes, new_node):
         for node in nodes:
-            if self.blocking_distance(instance, node, new_node) <= 0:
+            if self.blocking_distance(instance, new_node, node) <= 0:
                 return False
         
         return True

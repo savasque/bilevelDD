@@ -53,13 +53,13 @@ class Parser:
         # Fcols = [i for i in range(len(mps_file["obj"]) - aux_file["N"][0], len(mps_file["obj"]))]
         Fcols = aux_file["LC"]
 
-        A = [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
-        B = [] if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
+        A = np.array([]) if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
+        B = np.array([]) if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
         C = mps_file["constrs"][Frows[0]:Frows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
         D = mps_file["constrs"][Frows[0]:Frows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
-        a = [] if not Lrows else mps_file["rhs"][Lrows[0]:Lrows[-1] + 1]
+        a = np.array([]) if not Lrows else mps_file["rhs"][Lrows[0]:Lrows[-1] + 1]
         b = mps_file["rhs"][Frows[0]:Frows[-1] + 1]
-        Lsense = [] if not Lrows else mps_file["sense"][Lrows[0]:Lrows[-1] + 1]
+        Lsense = np.array([]) if not Lrows else mps_file["sense"][Lrows[0]:Lrows[-1] + 1]
         Fsense = mps_file["sense"][Frows[0]:Frows[-1] + 1]
 
         # Turn all constrs sense into "<="
@@ -81,6 +81,10 @@ class Parser:
                 C = np.vstack((C, -C[i]))
                 D = np.vstack((D, -D[i]))
                 b = np.append(b, -b[i])
+
+        # Update Lrows and Frows
+        Lrows = [i for i in range(A.shape[0])]
+        Frows = [i if not Lrows else Lrows[-1] + 1 + i for i in range(C.shape[0])]
 
         data = {
             "id": file_name,
@@ -115,6 +119,13 @@ class Parser:
             else:
                 instance.interaction[i] = "follower"
 
+        # Compute known values (Fischetti et al, 2017)
+        for j in range(instance.Fcols):
+            if np.all([instance.D[i][j] <= 0 for i in range(instance.Frows)]) and instance.d[j] < 0:
+                instance.known_y_values[j] = 1
+            elif np.all([instance.D[i][j] >= 0 for i in range(instance.Frows)]) and instance.d[j] > 0:
+                instance.known_y_values[j] = 0
+
         return instance
 
     def write_results(self, result, name):
@@ -125,15 +136,15 @@ class Parser:
             current_results.set_index("instance", inplace=True)
             current_results = pd.concat([current_results, new_result])
             current_results.to_excel("results/{}.xlsx".format(name))
-            with open("results/{}.json".format(name), "r") as json_file:
-                data = json.load(json_file)
-                data["results"].append(result)
-            with open("results/{}.json".format(name), "w") as json_file:
-                json.dump(data, json_file)
+            # with open("results/{}.json".format(name), "r") as json_file:
+            #     data = json.load(json_file)
+            #     data["results"].append(result)
+            # with open("results/{}.json".format(name), "w") as json_file:
+            #     json.dump(data, json_file)
         except:
             new_result.to_excel("results/{}.xlsx".format(name))
-            with open("results/{}.json".format(name), "w") as json_file:
-                json.dump({"results": [result]}, json_file)
+            # with open("results/{}.json".format(name), "w") as json_file:
+            #     json.dump({"results": [result]}, json_file)
 
         return name
 

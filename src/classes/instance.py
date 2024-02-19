@@ -15,3 +15,4 @@ class Instance:
         self.Fcols = len(self.c_follower)
         self.Frows = len(self.b)
         self.interaction = dict()
+        self.known_y_values = dict()

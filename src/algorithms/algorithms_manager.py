@@ -71,8 +71,9 @@ class AlgorithmsManager:
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
         result["num_arcs"] = diagram.arc_count
+        result["upper_bound"] = min(result["upper_bound"], instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"])
 
-        self.logger.debug("Results: ObjVal: {obj_val} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
+        self.logger.debug("Results for {instance}: ObjVal: {obj_val} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
 
         return result
 
@@ -252,6 +253,6 @@ class AlgorithmsManager:
         follower_value = solve_follower_problem(instance, vars["x"])[0]
         follower_response = solve_aux_problem(instance, vars["x"], follower_value)[1]
         results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
-        results["bilevel_gap"] = round((results["upper_bound"] - results["obj_val"]) / abs(results["upper_bound"]), 3)
+        results["bilevel_gap"] = round((results["upper_bound"] - results["obj_val"]) / abs(results["upper_bound"] + 1e-2), 3)
 
         return results
