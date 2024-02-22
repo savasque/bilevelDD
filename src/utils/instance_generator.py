@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import gurobipy as gp
 
 from utils.utils import mkdir
@@ -13,17 +14,45 @@ class InstanceGenerator:
         mkdir(path)
 
         for k in range(number_of_instances):
-            # Constrs coeffs and RHS: leader's problem
-            leader_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(0, 1, params["n_F"]))) for _ in range(params["m_L"])])
-            leader_rhs = np.random.randint(0, 3 * params["n_L"], params["m_L"])
-            # Constrs coeffs and RHS: follower's problem
-            follower_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 11, params["n_F"]))) for _ in range(params["m_F"])])
-            follower_rhs = np.random.randint(0, 3 * params["n_F"], params["m_F"])
+            if instance_type == "uniform":
+                # Constrs coeffs and RHS: leader's problem
+                leader_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 11, params["n_F"]))) for _ in range(params["m_L"])])
+                leader_rhs = .25 * leader_constrs.sum(axis=1).round()
+                # Constrs coeffs and RHS: follower's problem
+                follower_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 11, params["n_F"]))) for _ in range(params["m_F"])])
+                follower_rhs = (.25 * follower_constrs.sum(axis=1)).round()
 
-            # ObjFunction: leader
-            leader_obj = np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 0, params["n_F"])))
-            # ObjFunction: follower
-            follower_obj = np.array(np.random.randint(0, 11, params["n_F"]))
+                # ObjFunction: leader
+                leader_obj = np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 0, params["n_F"])))
+                # ObjFunction: follower
+                follower_obj = np.array(np.random.randint(0, 11, params["n_F"]))
+
+            elif instance_type == "sparse_leader":
+                # Constrs coeffs and RHS: leader's problem
+                leader_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 11, params["n_F"]))) for _ in range(params["m_L"])])
+                leader_rhs = .25 * leader_constrs.sum(axis=1).round()
+                # Constrs coeffs and RHS: follower's problem
+                follower_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]) * [0 if i <= .8 else 1 for i in np.random.random(params["n_L"])], np.random.randint(-10, 11, params["n_F"]))) for _ in range(params["m_F"])])
+                follower_rhs = (.25 * follower_constrs.sum(axis=1)).round()
+
+                # ObjFunction: leader
+                leader_obj = np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 0, params["n_F"])))
+                # ObjFunction: follower
+                follower_obj = np.array(np.random.randint(0, 11, params["n_F"]))
+            
+            elif instance_type == "weak_leader":
+                # Constrs coeffs and RHS: leader's problem
+                leader_constrs = np.array([np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 11, params["n_F"]))) for _ in range(params["m_L"])])
+                leader_rhs = .25 * leader_constrs.sum(axis=1).round()
+                # Constrs coeffs and RHS: follower's problem
+                follower_constrs = np.array([np.concatenate(((.01 * np.random.randint(-100, 101, params["n_L"])).round(), np.random.randint(-100, 101, params["n_F"]))) for _ in range(params["m_F"])])
+                follower_rhs = (.25 * follower_constrs.sum(axis=1)).round()
+
+                # ObjFunction: leader
+                leader_obj = np.concatenate((np.random.randint(-10, 11, params["n_L"]), np.random.randint(-10, 0, params["n_F"])))
+                # ObjFunction: follower
+                follower_obj = np.array(np.random.randint(0, 11, params["n_F"]))
+
 
             # Aux file
             LL = list()

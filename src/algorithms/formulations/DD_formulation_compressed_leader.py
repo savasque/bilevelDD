@@ -92,11 +92,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     )
 
     # Strengthening (Fischetti et al, 2017)
-    for j in range(Fcols):
-        if np.all([D[i][j] <= 0 for i in range(Frows)]) and d[j] < 0:
-            model.addConstr(y[j] == 1)
-        elif np.all([D[i][j] >= 0 for i in range(Frows)]) and d[j] > 0:
-            model.addConstr(y[j] == 0)
+    model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
 
     # Objective function
     obj = c_leader @ x.values() + c_follower @ y.values()

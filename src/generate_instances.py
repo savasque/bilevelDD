@@ -10,8 +10,8 @@ if __name__ == "__main__":
     params = {
         "n_L": 100,
         "n_F": 10, 
-        "m_L": 10,
-        "m_F": 10,
+        "m_L": 5,
+        "m_F": 5,
         "folder_name": datetime.now().strftime("%d-%m-%Y %H:%M:%S")
     }
-    generate_instances("test", 10, params)
+    generate_instances("uniform", 10, params)

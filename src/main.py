@@ -4,13 +4,7 @@ import argparse
 import constants
 from utils.parser import Parser
 
-from classes.decision_diagram import DecisionDiagram
-from decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
-
 from algorithms.algorithms_manager import AlgorithmsManager
-from algorithms.utils.solve_HPR import solve as solve_HPR
-from algorithms.utils.solve_follower_problem import solve as solve_follower_problem
-from algorithms.utils.solve_aux_problem import solve as solve_aux_problem
 
 # LogLevel
 logzero.loglevel(logging.getLevelName(constants.LOG_LEVEL))
@@ -56,6 +50,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Testing
-    args.instance_name = constants.INSTANCES or "miplib/stein2710"
+    if not args.instance_name:
+        args.instance_name = constants.INSTANCES
     
     run(args)

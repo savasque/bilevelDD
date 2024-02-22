@@ -1,5 +1,6 @@
 from time import time
 import numpy as np
+from collections import deque
 
 import gurobipy as gp
 
@@ -113,3 +114,92 @@ def solve_follower_HPR(instance, forbidden_X, forbidden_Y, num_solutions, obj):
         return model.ObjVal, X, Y
     else:
         return None, list(), list()
+    
+def build_from_partitions(instance, num_solutions):
+    t0 = time()
+    Y = dict()
+
+    model = gp.Model()
+    model.Params.OutputFlag = 0
+    x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
+    y = model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+    # HPR constrs
+    model.addConstrs((instance.A[i] @ x.values() + instance.B[i] @ y.values() <= instance.a[i] for i in range(instance.Lrows)), name="leader_constrs")
+    model.addConstrs((instance.C[i] @ x.values() + instance.D[i] @ y.values() <= instance.b[i] for i in range(instance.Frows)), name="follower_constrs")
+    # Get known optimal y-values (Fischetti et al, 2017)
+    model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
+    # Objective function
+    obj_func = instance.d @ y.values()
+    model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
+    model.optimize()
+
+    queue = deque([(model, y)])
+    while queue and time() - t0 <= 60 and len(Y) < num_solutions:
+        model, y = queue.popleft()
+        # Tabu list
+        for tabu_y in Y.values():
+            model.addConstr(hamming_distance(y, tabu_y) >= 1)
+        model.optimize()
+        if model.status == 2:
+            y = [i.X for i in y.values()]
+
+            # Sanity check
+            if str(y) in Y:
+                a = None
+
+            Y[str(y)] = y
+            print("Collected y's: {}".format(len(Y)))
+            for i in range(instance.Lrows):
+                new_model = gp.Model()
+                new_model.Params.OutputFlag = 0
+                x = new_model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
+                new_y = new_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+                # HPR constrs
+                new_model.addConstrs(instance.A[k] @ x.values() + instance.B[k] @ new_y.values() <= instance.a[k] for k in range(instance.Lrows))
+                new_model.addConstrs(instance.C[k] @ x.values() + instance.D[k] @ new_y.values() <= instance.b[k] for k in range(instance.Frows))
+                new_model.addConstr(instance.A[i] @ x.values() + instance.B[i] @ y >= instance.a[i] + 1)
+                # Get known optimal y-values (Fischetti et al, 2017)
+                new_model.addConstrs(new_y[j] == val for j, val in instance.known_y_values.items())
+                # Objective function
+                obj_func = instance.d @ new_y.values()
+                new_model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
+                
+                queue.append((new_model, new_y))
+
+            for i in range(instance.Frows):
+                new_model = gp.Model()
+                new_model.Params.OutputFlag = 0
+                x = new_model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
+                new_y = new_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+                # HPR constrs
+                new_model.addConstrs(instance.A[k] @ x.values() + instance.B[k] @ new_y.values() <= instance.a[k] for k in range(instance.Lrows))
+                new_model.addConstrs(instance.C[k] @ x.values() + instance.D[k] @ new_y.values() <= instance.b[k] for k in range(instance.Frows))
+                new_model.addConstr(instance.C[i] @ x.values() + instance.D[i] @ y >= instance.b[i] + 1)
+                # Get known optimal y-values (Fischetti et al, 2017)
+                new_model.addConstrs(new_y[j] == val for j, val in instance.known_y_values.items())
+                # Objective function
+                obj_func = instance.d @ new_y.values()
+                new_model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
+                
+                queue.append((new_model, new_y))
+    
+    # Sanity check
+    for y in Y.values():
+        model = gp.Model()
+        model.Params.OutputFlag = 0
+        x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
+        # HPR constrs
+        model.addConstrs((instance.A[i] @ x.values() + instance.B[i] @ y <= instance.a[i] for i in range(instance.Lrows)), name="leader_constrs")
+        model.addConstrs((instance.C[i] @ x.values() + instance.D[i] @ y <= instance.b[i] for i in range(instance.Frows)), name="follower_constrs")
+        # Get known optimal y-values (Fischetti et al, 2017)
+        model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
+        # Objective function
+        obj_func = 0
+        model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
+        model.optimize()
+        if model.status != 2:
+            a = None
+
+    Y = list(Y.values())
+    
+    return Y, time() - t0

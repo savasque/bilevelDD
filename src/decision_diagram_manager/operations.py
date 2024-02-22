@@ -235,8 +235,9 @@ class Operations:
         else:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 
-        filtered_queue = deque([sorted_queue.popleft()])
+        filtered_queue = deque()
         remainining_queue = deque()
+        
         for node in sorted_queue:
             if self.check_diversity_criterion(instance, filtered_queue, node) and len(filtered_queue) < max_width:
                 filtered_queue.append(node)

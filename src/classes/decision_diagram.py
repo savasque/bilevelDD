@@ -37,8 +37,10 @@ class DecisionDiagram:
 
     def update_in_outgoing_arcs(self):
         for arc in self.arcs:
-            self.nodes[arc.tail].outgoing_arcs.append(arc)
-            self.nodes[arc.head].incoming_arcs.append(arc)
+            if arc not in self.nodes[arc.tail].outgoing_arcs:
+                self.nodes[arc.tail].outgoing_arcs.append(arc)
+            if arc not in self.nodes[arc.head].incoming_arcs:
+                self.nodes[arc.head].incoming_arcs.append(arc)
 
     def remove_in_outgoing_arcs(self):
         for node in self.nodes.values():

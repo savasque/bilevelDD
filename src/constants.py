@@ -50,5 +50,10 @@ INSTANCES = [
 ]
 
 # INSTANCES = [
-#     "custom/test/instance-0"
+#     "custom/weak_leader/instance-{}".format(i)
+#     for i in range(0, 10)
+# ]
+
+# INSTANCES = [
+#     "custom/uniform/instance-0"
 # ]
