@@ -21,7 +21,7 @@ class AlgorithmsManager:
         self.logger = logzero.logger
     
     def one_time_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, solver_time_limit):
-        diagram = DecisionDiagram()
+        diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
         Y_tracker = dict()
@@ -90,7 +90,7 @@ class AlgorithmsManager:
         return result
 
     def iterative_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, solver_time_limit):
-        diagram = DecisionDiagram()
+        diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
         t0 = time()
@@ -139,7 +139,7 @@ class AlgorithmsManager:
             else:
                 # Current solution is not b-feasible. Add a cut and solve again
                 # Build extra DD
-                diagram = DecisionDiagram()
+                diagram = DecisionDiagram(iter + 1)
                 Y = [result["opt_y"]]
                 diagram = diagram_manager.compile_diagram(
                     diagram, instance, compilation_method, 0, 
@@ -187,42 +187,42 @@ class AlgorithmsManager:
         model.reset()
 
         # Create vars
-        w = model.addVars([arc.id for arc in diagram.arcs], ub=1, name="w")
-        pi = model.addVars([node.id for node in diagram.nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
-        gamma = model.addVars([arc.id for arc in diagram.arcs if arc.player == "leader"], name="gamma")
-        alpha = model.addVars([arc.id for arc in diagram.arcs if arc.player == "leader"], vtype=gp.GRB.BINARY, name="alpha")
-        beta = model.addVars([arc.id for arc in diagram.arcs if arc.player == "leader"], interaction_indices, vtype=gp.GRB.BINARY, name="beta")
+        w = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs], ub=1, name="w")
+        pi = model.addVars([(node.id, diagram.id) for node in diagram.nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
+        gamma = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs if arc.player == "leader"], name="gamma")
+        alpha = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs if arc.player == "leader"], vtype=gp.GRB.BINARY, name="alpha")
+        beta = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs if arc.player == "leader"], interaction_indices, vtype=gp.GRB.BINARY, name="beta")
         
         # Value-function constr
-        model.addConstr(gp.quicksum(instance.d[j] * vars["y"][j] for j in range(instance.Fcols)) <= gp.quicksum(arc.cost * w[arc.id] for arc in diagram.arcs), name="ValueFunction")
+        model.addConstr(gp.quicksum(instance.d[j] * vars["y"][j] for j in range(instance.Fcols)) <= gp.quicksum(arc.cost * w[arc.id, diagram.id] for arc in diagram.arcs), name="ValueFunction")
 
         # Flow constrs
-        model.addConstr(gp.quicksum(w[arc.id] for arc in diagram.nodes["root"].outgoing_arcs) - gp.quicksum(w[arc.id] for arc in diagram.nodes["root"].incoming_arcs) == 1, name="FlowRoot")
-        model.addConstr(gp.quicksum(w[arc.id] for arc in diagram.nodes["sink"].outgoing_arcs) - gp.quicksum(w[arc.id] for arc in diagram.nodes["sink"].incoming_arcs) == -1, name="FlowSink")
-        model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in diagram.nodes.values() if node.id not in ["root", "sink"])
+        model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["root"].outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["root"].incoming_arcs) == 1, name="FlowRoot")
+        model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["sink"].outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["sink"].incoming_arcs) == -1, name="FlowSink")
+        model.addConstrs(gp.quicksum(w[arc.id, diagram.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in node.incoming_arcs) == 0 for node in diagram.nodes.values() if node.id not in ["root", "sink"])
 
         # Capacity constrs
-        model.addConstrs(w[arc.id] <= vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
-        model.addConstrs(w[arc.id] <= 1 - vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
+        # model.addConstrs(w[arc.id, diagram.id] <= vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
+        # model.addConstrs(w[arc.id, diagram.id] <= 1 - vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
 
         # Dual feasibility
-        model.addConstrs((pi[arc.tail] - pi[arc.head] <= arc.cost for arc in diagram.arcs if arc.player in ["follower", None]), name="DualFeasFollower")
-        model.addConstrs((pi[arc.tail] - pi[arc.head] - gamma[arc.id] <= 0 for arc in diagram.arcs if arc.player == "leader"), name="DualFeasLeader")
+        model.addConstrs((pi[arc.tail, diagram.id] - pi[arc.head, diagram.id] <= arc.cost for arc in diagram.arcs if arc.player in ["follower", None]), name="DualFeasFollower")
+        model.addConstrs((pi[arc.tail, diagram.id] - pi[arc.head, diagram.id] - gamma[arc.id, diagram.id] <= 0 for arc in diagram.arcs if arc.player == "leader"), name="DualFeasLeader")
 
         # Strong duality
-        model.addConstr(pi[diagram.nodes["root"].id] == gp.quicksum(arc.cost * w[arc.id] for arc in diagram.arcs), name="StrongDualRoot")
-        model.addConstr(pi[diagram.nodes["sink"].id] == 0, name="StrongDualSink")
+        model.addConstr(pi[diagram.nodes["root"].id, diagram.id] == gp.quicksum(arc.cost * w[arc.id, diagram.id] for arc in diagram.arcs), name="StrongDualRoot")
+        model.addConstr(pi[diagram.nodes["sink"].id, diagram.id] == 0, name="StrongDualSink")
 
         # Gamma bounds
         M_gamma = 1e6
-        model.addConstrs(gamma[arc.id] <= M_gamma * alpha[arc.id] for arc in diagram.arcs if arc.player == "leader")
+        model.addConstrs(gamma[arc.id, diagram.id] <= M_gamma * alpha[arc.id, diagram.id] for arc in diagram.arcs if arc.player == "leader")
 
         # Alpha-beta relationship
-        model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_indices) for arc in diagram.arcs if arc.player == "leader")
+        model.addConstrs(alpha[arc.id, diagram.id] <= gp.quicksum(beta[arc.id, diagram.id, i] for i in interaction_indices) for arc in diagram.arcs if arc.player == "leader")
 
         # Blocking definition
         M_blocking = {i: sum(max(-instance.C[i][j], 0) for j in range(instance.Lcols)) for i in range(instance.Frows)}
-        model.addConstrs(instance.C[i] @ vars["x"].values() >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in diagram.arcs if arc.player == "leader" for i in interaction_indices)
+        model.addConstrs(instance.C[i] @ vars["x"].values() >= -M_blocking[i] + beta[arc.id, diagram.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in diagram.arcs if arc.player == "leader" for i in interaction_indices)
 
     def run_DD_reformulation(self, instance, diagram, time_limit, incumbent=dict()):
         # Solve DD reformulation

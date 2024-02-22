@@ -1,5 +1,6 @@
 class DecisionDiagram:
-    def __init__(self):
+    def __init__(self, id):
+        self.id = id
         self.nodes = dict()  # {id: Node}
         self.arcs = list()  # {(Node.id, Node.id): Arc}
         self.graph_map = dict()  # {hash_key: Node}: Hast table mapping hash_key (node.state + node.layer) to an instance of Node
@@ -65,6 +66,7 @@ class DecisionDiagram:
         return False
     
     def inherit_data(self, diagram):
+        self.id = diagram.id
         self.max_width = diagram.max_width
         self.ordering_heuristic = diagram.ordering_heuristic
         self.compilation_method = diagram.compilation_method

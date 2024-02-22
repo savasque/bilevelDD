@@ -265,7 +265,7 @@ class Operations:
         t0 = time()
         self.logger.debug("Executing bottom-up recursion to remove unreachable nodes")
         
-        clean_diagram = DecisionDiagram()
+        clean_diagram = DecisionDiagram(None)
         clean_diagram.inherit_data(diagram)
 
         # Add root and sink nodes
