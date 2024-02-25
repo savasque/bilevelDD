@@ -21,8 +21,8 @@ def get_model(instance, diagram, time_limit, incumbent):
 
     nodes = diagram.nodes
     arcs = diagram.arcs
-    root_node = nodes["root"]
-    sink_node = nodes["sink"]
+    root_node = diagram.root_node
+    sink_node = diagram.sink_node
     interaction_indices = [i for i in range(instance.Frows) if np.any(instance.C[i]) and np.any(instance.D[i])]
 
     model = gp.Model()
@@ -32,7 +32,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")
     w = model.addVars([arc.id for arc in arcs], ub=1, name="w")
-    pi = model.addVars([node.id for node in nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
+    pi = model.addVars([node.id for node in nodes], lb=-gp.GRB.INFINITY, name="pi")
     gamma = model.addVars([arc.id for arc in arcs if arc.player == "leader"], name="gamma")
     alpha = model.addVars([arc.id for arc in arcs if arc.player == "leader"], vtype=gp.GRB.BINARY, name="alpha")
     beta = model.addVars([arc.id for arc in arcs if arc.player == "leader"], interaction_indices, vtype=gp.GRB.BINARY, name="beta")
@@ -63,15 +63,15 @@ def get_model(instance, diagram, time_limit, incumbent):
     # Flow constrs
     model.addConstr(gp.quicksum(w[arc.id] for arc in root_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in root_node.incoming_arcs) == 1, name="FlowRoot")
     model.addConstr(gp.quicksum(w[arc.id] for arc in sink_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in sink_node.incoming_arcs) == -1, name="FlowSink")
-    model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes.values() if node.id not in ["root", "sink"])
+    model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes if node.id not in ["root", "sink"])
 
-    # Capacity constrs
-    model.addConstrs(w[arc.id] <= y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
-    model.addConstrs(w[arc.id] <= 1 - y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
+    # # Capacity constrs
+    # model.addConstrs(w[arc.id] <= y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
+    # model.addConstrs(w[arc.id] <= 1 - y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
 
     # Dual feasibility
-    model.addConstrs((pi[arc.tail] - pi[arc.head] <= arc.cost for arc in arcs if arc.player in ["follower", None]), name="DualFeasFollower")
-    model.addConstrs((pi[arc.tail] - pi[arc.head] - gamma[arc.id] <= 0 for arc in arcs if arc.player == "leader"), name="DualFeasLeader")
+    model.addConstrs((pi[arc.tail.id] - pi[arc.head.id] <= arc.cost for arc in arcs if arc.player in ["follower", None]), name="DualFeasFollower")
+    model.addConstrs((pi[arc.tail.id] - pi[arc.head.id] - gamma[arc.id] <= 0 for arc in arcs if arc.player == "leader"), name="DualFeasLeader")
 
     # Strong duality
     model.addConstr(pi[root_node.id] == gp.quicksum(arc.cost * w[arc.id] for arc in arcs), name="StrongDualRoot")

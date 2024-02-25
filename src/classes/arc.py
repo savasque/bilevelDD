@@ -1,6 +1,5 @@
 class Arc:
     def __init__(self, tail, head, value, cost, var_index, player):
-        self.id = "{}-{}-{}".format(tail, head, value)
         self.tail = tail
         self.head = head
         self.value = value
@@ -8,9 +7,10 @@ class Arc:
         self.var_index = var_index
         self.player = player  # "leader" | "follower" | "dummy"
         self.block_values = dict()
+
+    @property
+    def id(self):
+        return  "{}-{}-{}".format(self.tail.id, self.head.id, self.value)
     
     def __repr__(self):
         return self.id
-    
-    def _update_id(self):
-        self.id = "{}-{}-{}".format(self.tail, self.head, self.value)

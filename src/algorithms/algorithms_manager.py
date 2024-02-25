@@ -13,18 +13,17 @@ from .formulations.DD_formulation_compressed_leader import get_model as get_mode
 from .utils.solve_HPR import solve as solve_HPR
 from .utils.solve_follower_problem import solve as solve_follower_problem
 from .utils.solve_aux_problem import solve as solve_aux_problem
-from .utils.build_Y import build as build_Y_set
+from .utils.sampler import Sampler
 
 
 class AlgorithmsManager:
     def __init__(self):
         self.logger = logzero.logger
     
-    def one_time_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, solver_time_limit):
+    def one_time_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, discard_method, solver_time_limit):
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
-        Y_tracker = dict()
         UB = float("inf")
 
         # Get HPR bound
@@ -36,20 +35,20 @@ class AlgorithmsManager:
         HPR_optimal_response = {"x": HPR_solution["x"], "y": y}
 
         # Get upper bound
-        if instance.Lrows and np.all([instance.A @ HPR_optimal_response["x"] + instance.B @ HPR_optimal_response["y"] <= instance.a]):
+        if instance.Lrows:
+            if np.all([instance.A @ HPR_optimal_response["x"] + instance.B @ HPR_optimal_response["y"] <= instance.a]):
+                UB = instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"]
+                self.logger.info("Initial UB given by HPR: {}".format(UB))
+        else:
             UB = instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"]
             self.logger.info("Initial UB given by HPR: {}".format(UB))
 
         # Build set Y
-        build_Y_runtime = 0
+        sampling_runtime = 0
+        sampler = Sampler(self.logger, sampling_method=constants.SAMPLING_METHOD)
         if constants.BUILD_Y_LENGTH:
-            if instance not in Y_tracker:
-                # Collect y's
-                Y, build_Y_runtime = build_Y_set(instance, constants.BUILD_Y_LENGTH)
-                Y_tracker[instance] = {"Y": Y, "runtime": build_Y_runtime}
-            else:
-                Y = Y_tracker[instance]["Y"]
-                build_Y_runtime = Y_tracker[instance]["runtime"]
+            # Collect y's
+            Y, sampling_runtime = sampler.sample(instance, constants.BUILD_Y_LENGTH)
             Y.append(y)
         else:
             Y = [y]
@@ -57,39 +56,41 @@ class AlgorithmsManager:
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
             diagram, instance, compilation_method, max_width, 
-            ordering_heuristic, HPR_optimal_response, Y
+            ordering_heuristic, discard_method, Y
         )
 
         # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
             result, _, _ = self.run_DD_reformulation_with_compressed_leader(
-                instance, diagram, time_limit=solver_time_limit - build_Y_runtime
+                instance, diagram, time_limit=solver_time_limit - sampling_runtime
             )
         else:
             result, _, _ = self.run_DD_reformulation(
-                instance, diagram, time_limit=solver_time_limit - build_Y_runtime
+                instance, diagram, time_limit=solver_time_limit - sampling_runtime
             )
 
         # Update final result
         result["approach"] = "one_time_compilation"
+        result["discard_method"] = discard_method
         result["HPR"] = HPR_value
         result["Y_length"] = len(Y)
-        result["build_Y_runtime"] = build_Y_runtime
-        result["total_runtime"] += build_Y_runtime
+        result["sampling_runtime"] = sampling_runtime
+        result["total_runtime"] += sampling_runtime
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
         result["num_arcs"] = diagram.arc_count
         result["upper_bound"] = min(result["upper_bound"], UB)
         result["bilevel_gap"] = round((result["upper_bound"] - result["obj_val"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = 0
-        del result["vars"]
-        del result["opt_y"]
 
         self.logger.info("Results for {instance}: ObjVal: {obj_val} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
 
+        del result["vars"]
+        del result["opt_y"]
+
         return result
 
-    def iterative_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, solver_time_limit):
+    def iterative_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, discard_method, solver_time_limit):
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
@@ -108,15 +109,18 @@ class AlgorithmsManager:
         Y = [y]
         
         # Get upper bound
-        LBs.append(HPR_value)
-        if np.all([instance.A @ HPR_optimal_response["x"] + instance.B @ HPR_optimal_response["y"] <= instance.a]):
+        if instance.Lrows:
+            if np.all([instance.A @ HPR_optimal_response["x"] + instance.B @ HPR_optimal_response["y"] <= instance.a]):
+                UB = instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"]
+                self.logger.info("Initial UB given by HPR: {}".format(UB))
+        else:
             UB = instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"]
             self.logger.info("Initial UB given by HPR: {}".format(UB))
 
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
             diagram, instance, compilation_method, max_width, 
-            ordering_heuristic, HPR_optimal_response, Y
+            ordering_heuristic, discard_method, Y
         )
 
         if compilation_method == "follower_then_compressed_leader":
@@ -134,7 +138,8 @@ class AlgorithmsManager:
         # Create new DDs and cuts
         while time() - t0 <= solver_time_limit:
             if instance.d @ result["vars"]["y"] <= instance.d @ result["opt_y"]:
-                self.logger.info("Bilevel solution found - Objval: {} - UB: {}".format(result["obj_val"], instance.c_leader @ result["vars"]["x"] + instance.c_follower @ result["vars"]["y"]))
+                UB = instance.c_leader @ result["vars"]["x"] + instance.c_follower @ result["vars"]["y"]
+                self.logger.info("Bilevel solution found - Objval: {} - UB: {}".format(result["obj_val"], UB))
                 break
             else:
                 # Current solution is not b-feasible. Add a cut and solve again
@@ -142,8 +147,9 @@ class AlgorithmsManager:
                 diagram = DecisionDiagram(iter + 1)
                 Y = [result["opt_y"]]
                 diagram = diagram_manager.compile_diagram(
-                    diagram, instance, compilation_method, 0, 
-                    ordering_heuristic, HPR_optimal_response, Y
+                    diagram, instance, compilation_method, float("inf"), 
+                    ordering_heuristic, discard_method, Y,
+                    skip_brute_force_compilation=True
                 )
                 # Add associated cuts and solve
                 self.add_DD_cuts(instance, diagram, model, vars)
@@ -162,9 +168,10 @@ class AlgorithmsManager:
 
         # Update results
         result["approach"] = "iterative_cuts"
+        result["discard_method"] = discard_method
         result["HPR"] = HPR_value
         result["Y_length"] = 0
-        result["build_Y_runtime"] = 0
+        result["sampling_runtime"] = 0
         result["max_width"] = max_width
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
@@ -188,7 +195,7 @@ class AlgorithmsManager:
 
         # Create vars
         w = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs], ub=1, name="w")
-        pi = model.addVars([(node.id, diagram.id) for node in diagram.nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
+        pi = model.addVars([(node.id, diagram.id) for node in diagram.nodes], lb=-gp.GRB.INFINITY, name="pi")
         gamma = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs if arc.player == "leader"], name="gamma")
         alpha = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs if arc.player == "leader"], vtype=gp.GRB.BINARY, name="alpha")
         beta = model.addVars([(arc.id, diagram.id) for arc in diagram.arcs if arc.player == "leader"], interaction_indices, vtype=gp.GRB.BINARY, name="beta")
@@ -197,21 +204,21 @@ class AlgorithmsManager:
         model.addConstr(gp.quicksum(instance.d[j] * vars["y"][j] for j in range(instance.Fcols)) <= gp.quicksum(arc.cost * w[arc.id, diagram.id] for arc in diagram.arcs), name="ValueFunction")
 
         # Flow constrs
-        model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["root"].outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["root"].incoming_arcs) == 1, name="FlowRoot")
-        model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["sink"].outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.nodes["sink"].incoming_arcs) == -1, name="FlowSink")
-        model.addConstrs(gp.quicksum(w[arc.id, diagram.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in node.incoming_arcs) == 0 for node in diagram.nodes.values() if node.id not in ["root", "sink"])
+        model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.root_node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.root_node.incoming_arcs) == 1, name="FlowRoot")
+        model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.sink_node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.sink_node.incoming_arcs) == -1, name="FlowSink")
+        model.addConstrs(gp.quicksum(w[arc.id, diagram.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in node.incoming_arcs) == 0 for node in diagram.nodes if node.id not in ["root", "sink"])
 
-        # Capacity constrs
+        # # Capacity constrs
         # model.addConstrs(w[arc.id, diagram.id] <= vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
         # model.addConstrs(w[arc.id, diagram.id] <= 1 - vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
 
         # Dual feasibility
-        model.addConstrs((pi[arc.tail, diagram.id] - pi[arc.head, diagram.id] <= arc.cost for arc in diagram.arcs if arc.player in ["follower", None]), name="DualFeasFollower")
-        model.addConstrs((pi[arc.tail, diagram.id] - pi[arc.head, diagram.id] - gamma[arc.id, diagram.id] <= 0 for arc in diagram.arcs if arc.player == "leader"), name="DualFeasLeader")
+        model.addConstrs((pi[arc.tail.id, diagram.id] - pi[arc.head.id, diagram.id] <= arc.cost for arc in diagram.arcs if arc.player in ["follower", None]), name="DualFeasFollower")
+        model.addConstrs((pi[arc.tail.id, diagram.id] - pi[arc.head.id, diagram.id] - gamma[arc.id, diagram.id] <= 0 for arc in diagram.arcs if arc.player == "leader"), name="DualFeasLeader")
 
         # Strong duality
-        model.addConstr(pi[diagram.nodes["root"].id, diagram.id] == gp.quicksum(arc.cost * w[arc.id, diagram.id] for arc in diagram.arcs), name="StrongDualRoot")
-        model.addConstr(pi[diagram.nodes["sink"].id, diagram.id] == 0, name="StrongDualSink")
+        model.addConstr(pi[diagram.root_node.id, diagram.id] == gp.quicksum(arc.cost * w[arc.id, diagram.id] for arc in diagram.arcs), name="StrongDualRoot")
+        model.addConstr(pi[diagram.sink_node.id, diagram.id] == 0, name="StrongDualSink")
 
         # Gamma bounds
         M_gamma = 1e6
@@ -284,8 +291,19 @@ class AlgorithmsManager:
 
         follower_value = solve_follower_problem(instance, vars["x"])[0]
         follower_response = solve_aux_problem(instance, vars["x"], follower_value)[1]
-        if instance.Lrows and np.all([instance.A @ vars["x"] + instance.B @ follower_response <= instance.a]):
-            results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
+
+        # Compute upper bound
+        if instance.d @ vars["y"] <= instance.d @ follower_response:
+            # Current solution is bilevel optimal
+            results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ vars["y"]
+        else:
+             # Current solution allows to compute an upper bound
+            if instance.Lrows:
+                if np.all([instance.A @ vars["x"] + instance.B @ follower_response <= instance.a]):
+                    results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
+            else:
+                results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
+        
         results["vars"] = vars
         results["opt_y"] = follower_response
 

@@ -1,12 +1,8 @@
-import sys
-sys.setrecursionlimit(2000)  #  TODO: rewrite the recursive filtering method in an iterative fashion
-
 from time import time
 from collections import deque
-import numpy as np
+from random import shuffle
 
 from classes.node import Node
-from classes.decision_diagram import DecisionDiagram
 
 
 class Operations:
@@ -176,14 +172,14 @@ class Operations:
         return order
 
     def create_zero_node(self, layer, parent_node):
-        node = Node(id=None, layer=layer, state=list(parent_node.state))
+        node = Node(id=None, layer=layer, state=list(parent_node.state), type=0)
         node.leader_cost = float(parent_node.leader_cost)
         node.follower_cost = float(parent_node.follower_cost)
-
+        
         return node
 
     def create_one_node(self, instance, layer, var_index, parent_node, player):
-        node = Node(id=None, layer=layer, state=list(parent_node.state))
+        node = Node(id=None, layer=layer, state=list(parent_node.state), type=1)
         if player == "follower":
             for i in range(instance.Frows):
                 if node.state[i] != None:
@@ -229,22 +225,25 @@ class Operations:
         node.leader_cost = min(node.leader_cost, new_node.leader_cost)
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
 
-    def reduced_queue(self, instance, queue, max_width, player):
+    def reduced_queue(self, instance, discard_method, queue, max_width, player):
         if player == "follower":
-            sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))  # Sort nodes in ascending order # TODO: remove int
+            if discard_method == "follower_cost":
+                sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
+            elif discard_method == "minmax_state":
+                sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), x.follower_cost)))
+            elif discard_method == "random":
+                sorted_queue = queue
+                shuffle(sorted_queue)
         else:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 
         filtered_queue = deque()
-        remainining_queue = deque()
         
         for node in sorted_queue:
             if self.check_diversity_criterion(instance, filtered_queue, node) and len(filtered_queue) < max_width:
                 filtered_queue.append(node)
-            else:
-                remainining_queue.append(node)
         
-        return filtered_queue, remainining_queue
+        return filtered_queue
 
     def check_diversity_criterion(self, instance, nodes, new_node):
         for node in nodes:
@@ -263,40 +262,38 @@ class Operations:
 
     def clean_diagram(self, diagram):
         t0 = time()
-        self.logger.debug("Executing bottom-up recursion to remove unreachable nodes")
-        
-        clean_diagram = DecisionDiagram(None)
-        clean_diagram.inherit_data(diagram)
+        self.logger.debug("Executing bottom-up filtering to remove unreachable nodes")
 
-        # Add root and sink nodes
-        root_node = diagram.nodes["root"]
-        clean_diagram.add_node(root_node)
-        sink_node = diagram.nodes["sink"]
-        clean_diagram.add_node(sink_node)
+        self.bottom_up_filtering(diagram)
 
-        self.bottom_up_recursion(diagram, clean_diagram, sink_node)
+        # Relabel nodes (Not required)
+        queue = deque([diagram.root_node])
+        label = 1
+        while queue:
+            node = queue.popleft()
+            for arc in node.outgoing_arcs:
+                child_node = arc.head
+                if child_node.id != "sink":
+                    child_node.id = label
+                    queue.append(child_node)
+                    label += 1
 
-        # Update arc pointers
-        for arc in clean_diagram.arcs:
-            arc.tail = clean_diagram.graph_map[diagram.nodes[arc.tail].hash_key]
-            arc.head = clean_diagram.graph_map[diagram.nodes[arc.head].hash_key]
-        
-        # Update in and outgoing arcs
-        clean_diagram.remove_in_outgoing_arcs()
-        for arc in clean_diagram.arcs:
-            clean_diagram.nodes[arc.tail].outgoing_arcs.append(arc)
-            clean_diagram.nodes[arc.head].incoming_arcs.append(arc)
+        self.logger.debug("Bottom-up filtering done. Time elapsed: {} s".format(time() - t0))
 
-        self.logger.debug("Bottom-up recursion done. Time elapsed: {} s".format(time() - t0))
-
-        return clean_diagram
-
-    def bottom_up_recursion(self, diagram, clean_diagram, node):
-        if node.hash_key not in clean_diagram.graph_map:
-            clean_diagram.add_node(node)
-        for arc in node.incoming_arcs:
-            tail_node = diagram.nodes[arc.tail]
-            if tail_node.hash_key in diagram.graph_map:
-                if tail_node.hash_key not in clean_diagram.graph_map:
-                    self.bottom_up_recursion(diagram, clean_diagram, tail_node)
-                clean_diagram.add_arc(arc)
+    def bottom_up_filtering(self, diagram):
+        for node in diagram.nodes:
+            node.outgoing_arcs = list()
+        diagram.nodes = list()
+        diagram.arcs = list()
+        diagram.graph_map = dict()
+        diagram.add_node(diagram.root_node)
+        diagram.add_node(diagram.sink_node)
+        queue = deque([diagram.sink_node])
+        while queue:
+            node = queue.popleft()
+            for arc in node.incoming_arcs:
+                if arc.tail.hash_key not in diagram.graph_map:
+                    diagram.add_node(arc.tail)
+                    queue.append(arc.tail)
+                diagram.add_arc(arc)
+                arc.tail.outgoing_arcs.append(arc)

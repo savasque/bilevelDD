@@ -7,7 +7,9 @@ COMPILATION_METHOD = ["follower_then_compressed_leader"]  # ["follower_then_lead
 APPROACH = ["one_time_compilation"]  # ["one_time_compilation", "iterative"]
 MAX_WIDTH = [25]
 ORDERING_HEURISTIC = ["cost_competitive"]  # ["lhs_coeffs", "leader_cost", "cost_competitive", "leader_feasibility", "max_connected_degree"]
+DISCARD_METHOD = ["follower_cost", "minmax_state", "random"]
 BUILD_Y_LENGTH = 0
+SAMPLING_METHOD = "partitioning"
 
 # Solver
 SOLVER_TIME_LIMIT = 600
@@ -49,11 +51,11 @@ INSTANCES = [
     # # "miplib/mod01090",
 ]
 
-# INSTANCES = [
-#     "custom/weak_leader/instance-{}".format(i)
-#     for i in range(0, 10)
-# ]
+INSTANCES = [
+    "custom/weak_leader/instance-9"
+]
 
 # INSTANCES = [
-#     "custom/uniform/instance-0"
+#     "custom/weak_leader/instance-{}".format(i)
+#     for i in range(10)
 # ]

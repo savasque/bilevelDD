@@ -1,9 +1,10 @@
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)  # To ignore Pandas warnings
+
 import gurobipy as gp
 import numpy as np
 import pandas as pd
 import logzero
-from datetime import datetime
-import json
 
 from classes.instance import Instance
 

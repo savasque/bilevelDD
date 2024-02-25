@@ -8,10 +8,10 @@ def generate_instances(instance_type, number_of_instances, params):
 
 if __name__ == "__main__":
     params = {
-        "n_L": 100,
-        "n_F": 10, 
-        "m_L": 5,
-        "m_F": 5,
+        "n_L": 50,
+        "n_F": 50, 
+        "m_L": 10,
+        "m_F": 10,
         "folder_name": datetime.now().strftime("%d-%m-%Y %H:%M:%S")
     }
-    generate_instances("uniform", 10, params)
+    generate_instances("weak_leader", 10, params)

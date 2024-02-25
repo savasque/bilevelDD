@@ -1,5 +1,5 @@
 class Node:
-    def __init__(self, id, layer, state=None):
+    def __init__(self, id, layer, state=None, type=None):
         self.id = id
         self.state = state
         self.layer = layer
@@ -7,6 +7,7 @@ class Node:
         self.incoming_arcs = list()
         self.leader_cost = 0
         self.follower_cost = 0
+        self.type = type
     
     @property
     def hash_key(self):

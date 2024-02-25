@@ -22,26 +22,29 @@ def run(args):
         instances = args.instance_name
     for instance_name in instances:
         for max_width in constants.MAX_WIDTH:
-            for ordering_heuristic in constants.ORDERING_HEURISTIC:
-                for compilation_method in constants.COMPILATION_METHOD: 
-                    for approach in constants.APPROACH:
-                        # Load data
-                        instance = parser.build_instance(instance_name)
+            for discard_method in constants.DISCARD_METHOD:
+                for ordering_heuristic in constants.ORDERING_HEURISTIC:
+                    for compilation_method in constants.COMPILATION_METHOD: 
+                        for approach in constants.APPROACH:
+                            # Load data
+                            instance = parser.build_instance(instance_name)
 
-                        if approach == "one_time_compilation":
-                            ## One-time compilation approach
-                            result = algorithms_manager.one_time_compilation_approach(
-                                instance, compilation_method, max_width, ordering_heuristic, constants.SOLVER_TIME_LIMIT
-                            )
-                        elif approach == "iterative":
-                            ## Iterative compilation approach
-                            result = algorithms_manager.iterative_compilation_approach(
-                                instance, compilation_method, max_width, ordering_heuristic, constants.SOLVER_TIME_LIMIT
-                            )
+                            if approach == "one_time_compilation":
+                                ## One-time compilation approach
+                                result = algorithms_manager.one_time_compilation_approach(
+                                    instance, compilation_method, max_width, ordering_heuristic, 
+                                    discard_method, constants.SOLVER_TIME_LIMIT
+                                )
+                            elif approach == "iterative":
+                                ## Iterative compilation approach
+                                result = algorithms_manager.iterative_compilation_approach(
+                                    instance, compilation_method, max_width, ordering_heuristic, 
+                                    discard_method, constants.SOLVER_TIME_LIMIT
+                                )
 
-                        # Write results
-                        name = "MW{}-VO{}".format(max_width, ordering_heuristic)
-                        name = parser.write_results(result, name)
+                            # Write results
+                            name = "MW{}-VO{}".format(max_width, ordering_heuristic)
+                            name = parser.write_results(result, name)
 
 
 if __name__ == "__main__":
