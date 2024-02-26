@@ -180,6 +180,9 @@ class AlgorithmsManager:
         result["bilevel_gap"] = round((result["upper_bound"] - result["obj_val"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = iter
         result["total_runtime"] = time() - t0
+
+        self.logger.info("Results for {instance}: ObjVal: {obj_val} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
+
         del result["vars"]
         del result["opt_y"]
 

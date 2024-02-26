@@ -40,7 +40,7 @@ class FollowerThenCompressedLeaderCompiler:
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
         for i in range(instance.Frows):
             if instance.interaction[i] == "leader":
-                root_node.state[i] = None
+                root_node.state[i] = -float("inf")
         diagram.add_node(root_node)
         sink_node = Node(id="sink", layer=instance.Fcols + 1)
         diagram.add_node(sink_node)
@@ -62,7 +62,7 @@ class FollowerThenCompressedLeaderCompiler:
             completion_bounds = [0] * instance.Frows
             for i in range(instance.Frows):
                 if instance.interaction[i] == "leader":
-                    completion_bounds[i] = None
+                    completion_bounds[i] = -float("inf")
                 else:
                     for j in range(instance.Lcols):
                         completion_bounds[i] += min(0, instance.C[i][j])
@@ -99,8 +99,8 @@ class FollowerThenCompressedLeaderCompiler:
                         for i in range(instance.Frows):
                             if instance.interaction[i] == "follower":
                                 if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
-                                    zero_head.state[i] = None
-                                    one_head.state[i] = None
+                                    zero_head.state[i] = -float("inf")
+                                    one_head.state[i] = -float("inf")
 
                         # Zero head
                         if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and instance.known_y_values.get(var_index) != 1:
@@ -315,7 +315,7 @@ class FollowerThenCompressedLeaderCompiler:
                         for i in range(instance.Frows):
                             if instance.interaction[i] == "follower":
                                 if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
-                                    child_node.state[i] = None
+                                    child_node.state[i] = -float("inf")
 
                         # Zero head
                         if y[var_index] == 0:
