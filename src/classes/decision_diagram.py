@@ -63,15 +63,14 @@ class DecisionDiagram:
             This method indicates whether a solution (x, y) is encoded in the diagram. Only for follower-then-leader type of compilation
         """
         
-        nodes = [self.nodes["root"]]
+        nodes = [self.root_node]
         while len(nodes):
             node = nodes.pop()
             if node.layer == len(x) + len(y):
                 return True
-            for arc in node.outgoing_arcs:  # Only for follower-leader compilation
-                if (arc.player == "follower" and arc.value == y[self.var_order["follower"][node.layer]])\
-                or (arc.player == "leader" and arc.value == x[self.var_order["leader"][node.layer - len(y)]]):
-                    nodes.append(self.nodes[arc.head])
+            for arc in node.outgoing_arcs:  # Only for follower-compressed-leader compilation
+                if (arc.player == "follower" and arc.value == y[self.var_order["follower"][node.layer]]) or arc.player == "leader":
+                    nodes.append(arc.head)
         
         return False
     
