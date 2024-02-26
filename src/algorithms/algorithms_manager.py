@@ -73,6 +73,7 @@ class AlgorithmsManager:
         result["approach"] = "one_time_compilation"
         result["discard_method"] = discard_method
         result["HPR"] = HPR_value
+        result["sampling"] = True if len(Y) >= 2 else False
         result["Y_length"] = len(Y)
         result["sampling_runtime"] = sampling_runtime
         result["total_runtime"] += sampling_runtime
@@ -142,7 +143,7 @@ class AlgorithmsManager:
                 self.logger.info("Bilevel solution found - Objval: {} - UB: {}".format(result["obj_val"], UB))
                 break
             else:
-                # Current solution is not b-feasible. Add a cut and solve again
+                # Current solution is not bilevel feasible. Add a cut and solve again
                 # Build extra DD
                 diagram = DecisionDiagram(iter + 1)
                 Y = [result["opt_y"]]
@@ -158,7 +159,7 @@ class AlgorithmsManager:
                 model.optimize()
                 if model.ObjVal >= result["obj_val"]:
                     self.logger.info("Model succesfully solved. Time elapsed: {} s".format(model.runtime))
-                    self.logger.info("New LB: {}".format(model.ObjVal))
+                    self.logger.info("Current LB: {}".format(model.ObjVal))
                     result = self.get_results(instance, diagram, model, vars)
 
             # Tracking
@@ -170,6 +171,7 @@ class AlgorithmsManager:
         result["approach"] = "iterative_cuts"
         result["discard_method"] = discard_method
         result["HPR"] = HPR_value
+        result["sampling"] = False
         result["Y_length"] = 0
         result["sampling_runtime"] = 0
         result["max_width"] = max_width

@@ -122,8 +122,8 @@ class Operations:
         elif ordering_heuristic == "leader_feasibility":
             self.logger.debug("Variable ordering heuristic: leader feasibility")
             for j in range(instance.Fcols):
-                order["follower"].append((j, sum([instance.D[i][j] for i in range(instance.Frows)])))
-            order["follower"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order["follower"].append((j, max([instance.D[i][j] for i in range(instance.Frows)]), sum([instance.D[i][j] for i in range(instance.Frows)])))
+            order["follower"].sort(key=lambda x: (x[1], x[2]))  # Sort variables in ascending order
             order["follower"] = [i[0] for i in order["follower"]]
             for j in range(instance.Lcols):
                 order["leader"].append((j, instance.c_leader[j]))
@@ -182,8 +182,7 @@ class Operations:
         node = Node(id=None, layer=layer, state=list(parent_node.state), type=1)
         if player == "follower":
             for i in range(instance.Frows):
-                if node.state[i] != None:
-                    node.state[i] += instance.D[i][var_index]
+                node.state[i] += instance.D[i][var_index]
             node.leader_cost = parent_node.leader_cost + instance.c_follower[var_index]
             node.follower_cost = parent_node.follower_cost + instance.d[var_index]
         else:
@@ -196,7 +195,7 @@ class Operations:
 
     def check_completion_bounds(self, instance, completion_bounds, node):
         for i in range(instance.Frows):
-            if node.state[i] != None and node.state[i] + completion_bounds[i] > instance.b[i]:
+            if node.state[i] + completion_bounds[i] > instance.b[i]:
                 return False
         
         return True
@@ -215,22 +214,21 @@ class Operations:
             
     def update_completions_bounds(self, instance, completion_bounds, var_index, player):
         for i in range(instance.Frows):
-            if completion_bounds[i] != None:
-                if player == "follower":
-                    completion_bounds[i] -= min(0, instance.D[i][var_index])
-                elif player == "leader":
-                    completion_bounds[i] -= min(0, instance.C[i][var_index])
+            if player == "follower":
+                completion_bounds[i] -= min(0, instance.D[i][var_index])
+            elif player == "leader":
+                completion_bounds[i] -= min(0, instance.C[i][var_index])
 
     def update_costs(self, node, new_node):
         node.leader_cost = min(node.leader_cost, new_node.leader_cost)
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
 
-    def reduced_queue(self, instance, discard_method, queue, max_width, player):
+    def reduce_queue(self, instance, discard_method, queue, max_width, player):
         if player == "follower":
             if discard_method == "follower_cost":
                 sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
             elif discard_method == "minmax_state":
-                sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), x.follower_cost)))
+                sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), sum(x.state), x.follower_cost)))
             elif discard_method == "random":
                 sorted_queue = queue
                 shuffle(sorted_queue)
@@ -238,10 +236,18 @@ class Operations:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 
         filtered_queue = deque()
+        remaining_nodes = deque()
         
+        # Check diversity of the queue
         for node in sorted_queue:
             if self.check_diversity_criterion(instance, filtered_queue, node) and len(filtered_queue) < max_width:
                 filtered_queue.append(node)
+            else:
+                remaining_nodes.append(node)
+        
+        # Replenish queue if too small
+        while len(filtered_queue) < max_width:
+            filtered_queue.append(remaining_nodes.popleft())
         
         return filtered_queue
 

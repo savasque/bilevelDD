@@ -53,7 +53,6 @@ class FollowerThenCompressedLeaderCompiler:
 
 
         ##### DD compilation #####
-
         if not skip_brute_force_compilation:
             ##### Compile y-solutions by binary branching
             self.logger.debug("Compiling new solutions")
@@ -66,7 +65,7 @@ class FollowerThenCompressedLeaderCompiler:
                 else:
                     for j in range(instance.Lcols):
                         completion_bounds[i] += min(0, instance.C[i][j])
-                        # completion_bounds[i] += HPR_optimal_response["x"][j] * instance.C[i][j] 
+                        # completion_bounds[i] += HPR_solution["x"][j] * instance.C[i][j] 
                     for j in range(instance.Fcols):
                         completion_bounds[i] += min(0, instance.D[i][j])
 
@@ -157,7 +156,7 @@ class FollowerThenCompressedLeaderCompiler:
 
                 # Width limit
                 if len(next_layer_queue) > max_width:
-                    next_layer_queue = self.operations.reduced_queue(instance, discard_method, next_layer_queue, max_width, player)
+                    next_layer_queue = self.operations.reduce_queue(instance, discard_method, next_layer_queue, max_width, player)
 
                 # Update queues
                 current_layer_queue = next_layer_queue
