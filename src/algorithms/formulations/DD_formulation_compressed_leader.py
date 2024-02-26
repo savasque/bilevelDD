@@ -65,9 +65,9 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstr(gp.quicksum(w[arc.id] for arc in sink_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in sink_node.incoming_arcs) == -1, name="FlowSink")
     model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes.values() if node.id not in ["root", "sink"])
 
-    # Capacity constrs
-    model.addConstrs(w[arc.id] <= y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
-    model.addConstrs(w[arc.id] <= 1 - y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
+    # # Capacity constrs
+    # model.addConstrs(w[arc.id] <= y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
+    # model.addConstrs(w[arc.id] <= 1 - y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
 
     # Dual feasibility
     model.addConstrs((pi[arc.tail] - pi[arc.head] <= arc.cost for arc in arcs if arc.player in ["follower", None]), name="DualFeasFollower")
