@@ -12,6 +12,9 @@ if __name__ == "__main__":
         "n_F": 50, 
         "m_L": 10,
         "m_F": 10,
-        "folder_name": datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        "folder_name": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
+        "independent_set_params": {
+            "n": 20
+        }
     }
-    generate_instances("weak_leader", 10, params)
+    generate_instances("independent_set", 10, params)
