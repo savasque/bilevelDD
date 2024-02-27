@@ -139,7 +139,7 @@ class Sampler:
                     a = None
 
                 Y[str(y)] = y
-                print("Collected y's: {}".format(len(Y)))
+                print("Sampled solutions: {}".format(len(Y)))
                 for i in range(instance.Lrows):
                     new_model = gp.Model()
                     new_model.Params.OutputFlag = 0

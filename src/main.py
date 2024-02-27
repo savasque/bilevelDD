@@ -1,5 +1,6 @@
 import logging, logzero
 import argparse
+from datetime import datetime
 
 import constants
 from utils.parser import Parser
@@ -14,6 +15,8 @@ def run(args):
     # Classes instantiation
     parser = Parser()
     algorithms_manager = AlgorithmsManager()
+
+    file_name = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
     # Simulation
     if type(args.instance_name) != list:
@@ -41,10 +44,16 @@ def run(args):
                                     instance, compilation_method, max_width, ordering_heuristic, 
                                     discard_method, constants.SOLVER_TIME_LIMIT
                                 )
+                            
+                            # if instance.name.split("/")[1] == "independent_set":
+                            #     parser.plot_graph(instance, result)
+
+                            # Remove solutions
+                            del result["vars"]
+                            del result["opt_y"]
 
                             # Write results
-                            name = "MW{}-VO{}".format(max_width, ordering_heuristic)
-                            name = parser.write_results(result, name)
+                            file_name = parser.write_results(result, file_name)
 
 
 if __name__ == "__main__":

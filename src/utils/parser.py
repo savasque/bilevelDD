@@ -45,13 +45,9 @@ class Parser:
     def build_instance(self, file_name):
         mps_file = self.load_mps_file(file_name)
         aux_file = self.load_aux_file(file_name)
-        # Lrows = [i for i in range(0, len(mps_file["constrs"]) - aux_file["M"][0])]
         Lrows = [i for i in range(len(mps_file["constrs"])) if i not in aux_file["LR"]]
-        # Frows = [i for i in range(len(mps_file["constrs"]) - aux_file["M"][0], len(mps_file["constrs"]))]
         Frows = aux_file["LR"]
-        # Lcols = [i for i in range(0, len(mps_file["obj"]) - aux_file["N"][0])]
         Lcols = [i for i in range(len(mps_file["obj"])) if i not in aux_file["LC"]]
-        # Fcols = [i for i in range(len(mps_file["obj"]) - aux_file["N"][0], len(mps_file["obj"]))]
         Fcols = aux_file["LC"]
 
         A = np.array([]) if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
@@ -137,17 +133,39 @@ class Parser:
             current_results.set_index("instance", inplace=True)
             current_results = pd.concat([current_results, new_result])
             current_results.to_excel("results/{}.xlsx".format(name))
-            # with open("results/{}.json".format(name), "r") as json_file:
-            #     data = json.load(json_file)
-            #     data["results"].append(result)
-            # with open("results/{}.json".format(name), "w") as json_file:
-            #     json.dump(data, json_file)
         except:
             new_result.to_excel("results/{}.xlsx".format(name))
-            # with open("results/{}.json".format(name), "w") as json_file:
-            #     json.dump({"results": [result]}, json_file)
 
         return name
+    
+    def plot_graph(self, instance, result):
+        import networkx as nx
+        import matplotlib.pyplot as plt
+        import json
+        from ast import literal_eval
+
+        with open("instances/{}.json".format(instance.name), "r") as file:
+            edge_map = json.load(file)
+            edge_map = {literal_eval(key): value for key, value in edge_map.items()}
+        
+        graph = nx.Graph()
+        for u in range(len(result["vars"]["y"])):
+            graph.add_node(u)
+        fixed_edges = [(i, j) for i in range(len(graph.nodes) - 1) for j in range(i + 1, len(graph.nodes)) if (i, j) not in edge_map]
+        for u, v in fixed_edges:
+            graph.add_edge(u, v, color="k")
+        edge_map = {value: key for key, value in edge_map.items()}
+        selected_egdes = [edge_map[idx] for idx, u in enumerate(result["vars"]["x"]) if u == 1]
+        for u, v in selected_egdes:
+            graph.add_edge(u, v, color="r")
+        
+        pos = nx.circular_layout(graph)
+        options = {
+            "node_color": ["k" if u == 0 else "green" for u in result["vars"]["y"]], 
+            "edge_color": [graph[u][v]["color"] for u, v in graph.edges]
+        }
+        nx.draw(graph, pos, **options)
+        plt.show()
 
 
 if __name__ == "__main__":
