@@ -85,7 +85,6 @@ class InstanceGenerator:
                     follower_constrs.append(row)
                 follower_constrs = np.array(follower_constrs) 
                 follower_obj = -np.ones(len(graph.nodes))
-
             
             ## Write instance files
             if instance_type in ["uniform", "sparse_leader", "weak_leader"]:
@@ -112,10 +111,10 @@ class InstanceGenerator:
                 model.setObjective(obj, sense=gp.GRB.MINIMIZE)
             
             elif instance_type == "independent_set":
-                # Map file
+                # Extra info file
+                data = {"leader_budget": int(leader_rhs[0]), "fixed_edges": len(graph.edges), "edge_map": {str(key): value for key, value in edge_map.items()}}
                 with open("{}/instance-{}.json".format(path, k), "w") as file:
-                    edge_map = {str(key): value for key, value in edge_map.items()}
-                    json.dump(edge_map, file)
+                    json.dump(data, file)
 
                 # Aux file args
                 LL = list()

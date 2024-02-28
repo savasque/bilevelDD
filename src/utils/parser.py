@@ -145,8 +145,8 @@ class Parser:
         from ast import literal_eval
 
         with open("instances/{}.json".format(instance.name), "r") as file:
-            edge_map = json.load(file)
-            edge_map = {literal_eval(key): value for key, value in edge_map.items()}
+            data = json.load(file)
+            edge_map = {literal_eval(key): value for key, value in data["edge_map"].items()}
         
         graph = nx.Graph()
         for u in range(len(result["vars"]["y"])):
@@ -164,6 +164,7 @@ class Parser:
             "node_color": ["k" if u == 0 else "green" for u in result["vars"]["y"]], 
             "edge_color": [graph[u][v]["color"] for u, v in graph.edges]
         }
+        plt.title("{} - Fixed edges: {} - Budget: {}".format(instance.name, data["fixed_edges"], data["leader_budget"]))
         nx.draw(graph, pos, **options)
         plt.show()
 
