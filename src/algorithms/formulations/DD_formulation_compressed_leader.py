@@ -78,8 +78,8 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
 
     # Gamma bounds
-    M_gamma = 1e6
-    model.addConstrs(gamma[arc.id] <= M_gamma * alpha[arc.id] for arc in arcs if arc.player == "leader")
+    M, _ = solve_HPR(instance, obj="follower", sense="maximize")
+    model.addConstrs(gamma[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
 
     # Alpha-beta relationship
     model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_indices) for arc in arcs if arc.player == "leader")
