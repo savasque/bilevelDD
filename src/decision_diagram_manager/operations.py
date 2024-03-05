@@ -229,9 +229,13 @@ class Operations:
                 sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
             elif discard_method == "minmax_state":
                 sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), sum(x.state), x.follower_cost)))
+            elif discard_method == "sum_state":
+                sorted_queue = deque(sorted(queue, key=lambda x: (sum(x.state), max(x.state), x.follower_cost)))
             elif discard_method == "random":
                 sorted_queue = queue
                 shuffle(sorted_queue)
+            # elif discard_method == "independent_set":
+
         else:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 

@@ -8,6 +8,7 @@ class Node:
         self.leader_cost = 0
         self.follower_cost = 0
         self.type = type
+        self.partial_solution = list()
     
     @property
     def hash_key(self):

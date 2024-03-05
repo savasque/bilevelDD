@@ -93,6 +93,8 @@ class FollowerThenCompressedLeaderCompiler:
                         node = current_layer_queue.popleft()
                         zero_head = self.operations.create_zero_node(layer + 1, parent_node=node)
                         one_head = self.operations.create_one_node(instance, layer + 1, var_index, parent_node=node, player=player)
+                        zero_head.partial_solution = node.partial_solution + [0]
+                        one_head.partial_solution = node.partial_solution + [1]
 
                         # Remove fixed state components
                         for i in range(instance.Frows):

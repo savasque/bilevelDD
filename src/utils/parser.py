@@ -148,23 +148,24 @@ class Parser:
             data = json.load(file)
             edge_map = {literal_eval(key): value for key, value in data["edge_map"].items()}
         
-        graph = nx.Graph()
-        for u in range(len(result["vars"]["y"])):
-            graph.add_node(u)
-        fixed_edges = [(i, j) for i in range(len(graph.nodes) - 1) for j in range(i + 1, len(graph.nodes)) if (i, j) not in edge_map]
-        for u, v in fixed_edges:
-            graph.add_edge(u, v, color="k")
         edge_map = {value: key for key, value in edge_map.items()}
+        graph = nx.node_link_graph(data["nx_data"])
+        for edge in graph.edges:
+            graph.edges[edge]["color"] = "black"
         selected_egdes = [edge_map[idx] for idx, u in enumerate(result["vars"]["x"]) if u == 1]
         for u, v in selected_egdes:
-            graph.add_edge(u, v, color="r")
+            graph.add_edge(u, v, color="red")
         
         pos = nx.circular_layout(graph)
         options = {
-            "node_color": ["k" if u == 0 else "green" for u in result["vars"]["y"]], 
-            "edge_color": [graph[u][v]["color"] for u, v in graph.edges]
+            "node_color": ["black" if u == 0 else "green" for u in result["vars"]["y"]], 
+            "edge_color": [graph.edges[u, v]["color"] for u, v in graph.edges],
+            "node_size": 800
         }
-        plt.title("{} - Fixed edges: {} - Budget: {}".format(instance.name, data["fixed_edges"], data["leader_budget"]))
+        labels = {v: "{}:{}".format(v, instance.d[v]) for v in range(len(graph.nodes))}
+        nx.draw_networkx_labels(graph, pos, labels, font_size=10, font_color="whitesmoke")
+
+        plt.title("{} - Fixed edges: {} - Budget: {}".format(instance.name, len(graph.edges), instance.a[0]))
         nx.draw(graph, pos, **options)
         plt.show()
 

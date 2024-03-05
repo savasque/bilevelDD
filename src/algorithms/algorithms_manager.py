@@ -96,7 +96,7 @@ class AlgorithmsManager:
         iter = 0
         UB = float("inf")
         LBs = list()
-        diagrams = list()
+        ys = list()
 
         # Get HPR bound
         self.logger.info("Solving HPR")
@@ -121,7 +121,6 @@ class AlgorithmsManager:
             diagram, instance, compilation_method, max_width, 
             ordering_heuristic, discard_method, Y
         )
-        diagrams.append(diagram)
 
         if compilation_method == "follower_then_compressed_leader":
             result, model, vars = self.run_DD_reformulation_with_compressed_leader(
@@ -152,7 +151,7 @@ class AlgorithmsManager:
                     ordering_heuristic, discard_method, Y,
                     skip_brute_force_compilation=True
                 )
-                diagrams.append(diagram)
+                ys.append(result["opt_y"])
                 # Add associated cuts and solve
                 self.add_DD_cuts(instance, diagram, model, vars)
                 model.Params.TimeLimit = solver_time_limit - (time() - t0)
@@ -183,6 +182,7 @@ class AlgorithmsManager:
         result["bilevel_gap"] = round((result["upper_bound"] - result["obj_val"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = iter
         result["total_runtime"] = time() - t0
+        result["ys"] = ys
 
         self.logger.info("Results for {instance}: ObjVal: {obj_val} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
 
