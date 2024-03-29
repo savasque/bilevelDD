@@ -37,7 +37,7 @@ def get_model(instance, time_limit, Y):
     # Value-function constr
     M = 1e6
     for idx, sampled_y in enumerate(Y):
-        model.addConstr(d @ y.values() <= d @ sampled_y - M * gp.quicksum(w[idx, i] for i in range(Frows)))
+        model.addConstr(d @ y.values() <= d @ sampled_y + M * gp.quicksum(w[idx, i] for i in range(Frows)))
 
     # Blocking definition
     M = 1e6

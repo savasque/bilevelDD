@@ -80,7 +80,6 @@ class Operations:
             Args: instance (class Instance)
             Returns: dict of sorted indices (dict)
         """
-
         order = {"leader": list(), "follower": list()}
 
         # Sum coeffs of the left hand side
@@ -108,8 +107,8 @@ class Operations:
                 order[key] = [i[0] for i in order[key]]
 
         # Competitive costs
-        elif ordering_heuristic == "cost_competitive":
-            self.logger.debug("Variable ordering heuristic: leader and follower (competitive) costs")
+        elif ordering_heuristic == "follower_cost":
+            self.logger.debug("Variable ordering heuristic: follower cost")
             for j in range(instance.Fcols):
                 order["follower"].append((j, instance.d[j]))
             for j in range(instance.Lcols):
@@ -130,11 +129,13 @@ class Operations:
             order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
             order["leader"] = [i[0] for i in order["leader"]]
                 
+        # Lexicographic
         elif ordering_heuristic == "lexicographic":
             self.logger.debug("Variable ordering heuristic: lexicographic")
             order["follower"] = [i for i in range(instance.Fcols)]
             order["leader"] = [i for i in range(instance.Lcols)]
 
+        # Max-connected-degree
         elif ordering_heuristic == "max_connected_degree":
             # Select follower variables with known value
             order["follower"] = [j for j in instance.known_y_values]
@@ -168,6 +169,9 @@ class Operations:
                 remaining_columns.pop(column[1][0])
 
             order["leader"] = [i for i in range(instance.Lcols)]
+
+        else:
+            raise ValueError("Invalid ordering heristic value")
 
         return order
 
@@ -229,13 +233,11 @@ class Operations:
                 sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
             elif discard_method == "minmax_state":
                 sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), sum(x.state), x.follower_cost)))
-            elif discard_method == "sum_state":
-                sorted_queue = deque(sorted(queue, key=lambda x: (sum(x.state), max(x.state), x.follower_cost)))
             elif discard_method == "random":
                 sorted_queue = queue
                 shuffle(sorted_queue)
-            # elif discard_method == "independent_set":
-
+            elif discard_method == "maxmin_slack":
+                sorted_queue = deque(sorted(queue, key=lambda x: (min(instance.b[i] - x.state[i] for i in range(instance.Frows)), -x.follower_cost), reverse=True))
         else:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 
@@ -288,7 +290,7 @@ class Operations:
                     queue.append(child_node)
                     label += 1
 
-        self.logger.debug("Bottom-up filtering done. Time elapsed: {} s".format(time() - t0))
+        self.logger.debug("Bottom-up filtering done -> Time elapsed: {} s".format(time() - t0))
 
     def bottom_up_filtering(self, diagram):
         for node in diagram.nodes:

@@ -1,3 +1,4 @@
+from time import time
 import gurobipy as gp
 import numpy as np
 
@@ -25,6 +26,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     sink_node = diagram.sink_node
     interaction_indices = [i for i in range(instance.Frows) if np.any(instance.C[i]) and np.any(instance.D[i])]
 
+    t0 = time()
     model = gp.Model()
     model.Params.TimeLimit = time_limit
     model.Params.IntegralityFocus = 1
@@ -65,10 +67,6 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstr(gp.quicksum(w[arc.id] for arc in sink_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in sink_node.incoming_arcs) == -1, name="FlowSink")
     model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes if node.id not in ["root", "sink"])
 
-    # # Capacity constrs
-    # model.addConstrs(w[arc.id] <= y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
-    # model.addConstrs(w[arc.id] <= 1 - y[j] for j in y for arc in arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
-
     # Dual feasibility
     model.addConstrs((pi[arc.tail.id] - pi[arc.head.id] <= arc.cost for arc in arcs if arc.player in ["follower", None]), name="DualFeasFollower")
     model.addConstrs((pi[arc.tail.id] - pi[arc.head.id] - gamma[arc.id] <= 0 for arc in arcs if arc.player == "leader"), name="DualFeasLeader")
@@ -78,7 +76,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
 
     # Gamma bounds
-    M, _ = solve_HPR(instance, obj="follower", sense="maximize")
+    M = solve_HPR(instance, obj="follower", sense="maximize")[0]
     model.addConstrs(gamma[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
 
     # Alpha-beta relationship
@@ -98,4 +96,4 @@ def get_model(instance, diagram, time_limit, incumbent):
     obj = c_leader @ x.values() + c_follower @ y.values()
     model.setObjective(obj, sense=gp.GRB.MINIMIZE)
 
-    return model, vars
+    return model, vars, time() - t0

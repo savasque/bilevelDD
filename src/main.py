@@ -44,19 +44,6 @@ def run(args):
                                     instance, compilation_method, max_width, ordering_heuristic, 
                                     discard_method, constants.SOLVER_TIME_LIMIT
                                 )
-                            
-                                # from classes.decision_diagram import DecisionDiagram
-                                # from decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
-                                # dd = DecisionDiagram(0)
-                                # ddm = DecisionDiagramManager()
-                                # ddm.compile_diagram(dd, instance, compilation_method, float("inf"), ordering_heuristic, discard_method, Y=result["ys"], skip_brute_force_compilation=True)
-                            
-                            # if "independent_set" in instance.name.split("/")[1]:
-                            #     parser.plot_graph(instance, result)
-                                
-                            Y = result["ys"]
-                            from algorithms.formulations.sampling_formulation import get_model
-                            model, vars = get_model(instance, 600, Y)
 
                             # Remove solutions
                             del result["vars"]

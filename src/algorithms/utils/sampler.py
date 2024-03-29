@@ -156,8 +156,6 @@ class Sampler:
                     new_model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
                     
                     queue.append((new_model, new_y))
-                    if len(queue) - 1 == num_solutions:
-                        break
 
                 for i in range(instance.Frows):
                     new_model = gp.Model()
@@ -175,9 +173,6 @@ class Sampler:
                     new_model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
                     
                     queue.append((new_model, new_y))
-
-                    if len(queue) > 100:
-                        break
         
         # Sanity check
         for y in Y.values():
