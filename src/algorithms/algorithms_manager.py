@@ -56,11 +56,11 @@ class AlgorithmsManager:
 
         # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
-            result, _, _ = self.run_DD_reformulation_with_compressed_leader(
+            result, model, _ = self.run_DD_reformulation_with_compressed_leader(
                 instance, diagram, time_limit=solver_time_limit - sampling_runtime
             )
         else:
-            result, _, _ = self.run_DD_reformulation(
+            result, model, _ = self.run_DD_reformulation(
                 instance, diagram, time_limit=solver_time_limit - sampling_runtime
             )
 
@@ -81,6 +81,13 @@ class AlgorithmsManager:
         result["bilevel_gap"] = round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = 0
 
+        # Compute continuous relaxation bound
+        relaxed_model = model.relax()
+        relaxed_model.Params.OutputFlag = 0
+        relaxed_model.optimize()
+        result["root_node_bound"] = self.callback_data.root_node_bound
+        result["relaxation_obj_val"] = relaxed_model.objval
+
         self.logger.info(
             "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result)
         )
@@ -93,28 +100,14 @@ class AlgorithmsManager:
 
         t0 = time()
         iter = 0
-        UB = float("inf")
-        LBs = list()
         ys = list()
 
-        # Get HPR bound
-        self.logger.info("Solving HPR")
-        HPR_value, HPR_solution = solve_HPR(instance)
-        _, y = solve_follower_problem(instance, HPR_solution["x"])  # Optimal follower response
-        _, y = solve_aux_problem(instance, HPR_solution["x"], instance.d @ y)  # Break ties among optimal follower responses
-        self.logger.info("HPR solved. ObjVal: {}".format(HPR_value))
-        HPR_optimal_response = {"x": HPR_solution["x"], "y": y}
-        Y = [y]
-        ys.append(y)
-        
-        # Get upper bound
-        if instance.Lrows:
-            if np.all([instance.A @ HPR_optimal_response["x"] + instance.B @ HPR_optimal_response["y"] <= instance.a]):
-                UB = instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"]
-                self.logger.info("Initial UB given by HPR: {}".format(UB))
-        else:
-            UB = instance.c_leader @ HPR_optimal_response["x"] + instance.c_follower @ HPR_optimal_response["y"]
-            self.logger.info("Initial UB given by HPR: {}".format(UB))
+        # Get HPR bounds
+        HPR_value, HPR_optimal_solution, UB, _ = self.get_HPR_bounds(instance)
+        self.logger.info("HPR solved -> LB: {} - UB: {}".format(HPR_value, UB))
+
+        # Build set Y
+        Y = [HPR_optimal_solution["y"]]
 
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
@@ -122,24 +115,22 @@ class AlgorithmsManager:
             ordering_heuristic, discard_method, Y
         )
 
+        # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
             result, model, vars = self.run_DD_reformulation_with_compressed_leader(
                 instance, diagram, time_limit=solver_time_limit
             )
-        else:
-            result, model, vars = self.run_DD_reformulation(
-                instance, diagram, time_limit=solver_time_limit
-            )
 
-        self.logger.info("Current LB: {}".format(model.ObjVal))
+        self.logger.info("New bounds -> LB: {lower_bound} - UB: {upper_bound}".format(**result))
         model.Params.OutputFlag = 0
-        LBs.append(result["obj_val"])
+
+        LB = result["lower_bound"]
+        UB = result["upper_bound"]
 
         # Create new DDs and cuts
         while time() - t0 <= solver_time_limit:
             if instance.d @ result["vars"]["y"] <= instance.d @ result["opt_y"]:
-                UB = instance.c_leader @ result["vars"]["x"] + instance.c_follower @ result["vars"]["y"]
-                self.logger.info("Bilevel solution found - Objval: {} - UB: {}".format(result["obj_val"], UB))
+                self.logger.warning("Bilevel solution found!")
                 break
             else:
                 # Current solution is not bilevel feasible. Add a cut and solve again
@@ -157,34 +148,35 @@ class AlgorithmsManager:
                 model.Params.TimeLimit = solver_time_limit - (time() - t0)
                 self.logger.info("Solving new model with added cuts. Time limit: {} s".format(solver_time_limit - (time() - t0)))
                 model.optimize()
-                if model.ObjVal >= result["obj_val"]:
-                    self.logger.info("Model succesfully solved. Time elapsed: {} s".format(model.runtime))
-                    self.logger.info("Current LB: {}".format(model.ObjVal))
-                    result = self.get_results(instance, diagram, model, vars)
+                self.logger.info("Model succesfully solved -> Time elapsed: {} s".format(model.runtime))
+                result = self.get_results(instance, diagram, model, vars, model_building_runtime=0)
+                if result["upper_bound"] < UB or result["lower_bound"] > LB:
+                    LB_diff = max(result["lower_bound"] - LB, 0)
+                    UB_diff = max(UB - result["upper_bound"], 0)
+                    LB = max(result["lower_bound"], LB)
+                    UB = min(result["upper_bound"], UB)
+                    self.logger.warning("New bounds -> LB: {} (+{}) - UB: {} (-{})".format(LB, LB_diff, UB, UB_diff))
 
-            # Tracking
-            UB = min(UB, result["upper_bound"])
-            LBs.append(result["obj_val"])
             iter += 1
 
+        total_runtime = time() - t0
+
         # Update results
-        result["approach"] = "iterative_cuts"
+        result["approach"] = "one_time_compilation"
         result["discard_method"] = discard_method
         result["HPR"] = HPR_value
-        result["sampling"] = False
-        result["Y_length"] = 0
+        result["sampling"] = True if len(Y) >= 2 else False
+        result["Y_length"] = len(Y)
         result["sampling_runtime"] = 0
-        result["max_width"] = max_width
+        result["total_runtime"] = round(total_runtime)
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
         result["num_arcs"] = diagram.arc_count
         result["upper_bound"] = min(result["upper_bound"], UB)
-        result["bilevel_gap"] = round((result["upper_bound"] - result["obj_val"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
+        result["bilevel_gap"] = round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = iter
-        result["total_runtime"] = time() - t0
-        result["ys"] = ys
 
-        self.logger.info("Results for {instance}: ObjVal: {obj_val} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
+        self.logger.info("Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
 
         return result
     
@@ -210,7 +202,7 @@ class AlgorithmsManager:
     def sample_follower_solutions(self, instance):
         sampler = Sampler(self.logger, sampling_method=constants.SAMPLING_METHOD)
         # Collect y's
-        Y, sampling_runtime = sampler.sample(instance, constants.BUILD_Y_LENGTH)
+        Y, sampling_runtime = sampler.sample(instance, constants.SAMPLING_LENGTH)
 
         return Y, sampling_runtime
     
@@ -286,6 +278,10 @@ class AlgorithmsManager:
 
         results = self.get_results(instance, diagram, model, vars, model_building_runtime)
 
+        feas, msg = self.check_solution_feasibility(instance, results["vars"])
+        if not feas:
+            raise ValueError("Solution is infeasible -> {}".format(msg))
+
         return results, model, vars
     
     def callback(self, model, where, cbdata):
@@ -303,7 +299,6 @@ class AlgorithmsManager:
         #     follower_response = solve_aux_problem(cbdata.instance, x_sol, follower_value)[1]
 
         #     # Add cut    
-
 
     def get_results(self, instance, diagram, model, vars, model_building_runtime):
         try:
@@ -327,8 +322,9 @@ class AlgorithmsManager:
             "model_runtime": round(model.runtime),
             "num_vars": model.numVars,
             "num_constrs": model.numConstrs,
-            "nodes": diagram.node_count,
-            "arcs": diagram.arc_count
+            "num_nodes": diagram.node_count,
+            "num_arcs": diagram.arc_count,
+            "num_node_merges": len([node for node in diagram.nodes if node.id != "sink_node" and len(node.incoming_arcs) >= 2])
         }
         results["instance"] = instance.name
         results["width"] = diagram.width
@@ -360,3 +356,11 @@ class AlgorithmsManager:
         results["opt_y"] = follower_response
 
         return results
+    
+    def check_solution_feasibility(self, instance, solution):
+        if instance.A and not np.all(instance.A @ solution["x"] + instance.B @ solution["y"] <= instance.a):
+            return False, "leader_infeasible"
+        if not np.all(instance.C @ solution["x"] + instance.D @ solution["y"] <= instance.b):
+            return False, "follower_infeasible"
+        
+        return True, "feasible"

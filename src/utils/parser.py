@@ -96,7 +96,7 @@ class Parser:
             "d": np.array([i for i in aux_file["LO"]]),
         }
 
-        self.logger.info("Instance {} succesfully loaded. LCols: {}, LRows: {}, FCols: {}, FRows: {}".format(
+        self.logger.info("Instance {} succesfully loaded -> LCols: {}, LRows: {}, FCols: {}, FRows: {}".format(
             file_name,
             len(Lcols),
             len(Lrows),

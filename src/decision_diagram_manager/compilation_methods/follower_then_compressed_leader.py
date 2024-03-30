@@ -32,6 +32,7 @@ class FollowerThenCompressedLeaderCompiler:
         diagram.max_width = max_width
         diagram.ordering_heuristic = ordering_heuristic
         diagram.var_order = var_order
+        diagram.graph_map = {l: dict() for l in range(instance.Fcols + 2)}
 
         # Create root and sink nodes
         root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
@@ -48,14 +49,14 @@ class FollowerThenCompressedLeaderCompiler:
         dummy_arc = Arc(tail=root_node, head=sink_node, value=0, cost=M, var_index=-1, player=None)
         diagram.add_arc(dummy_arc)
 
-        ##### HPR solution compilation
-        self.sampled_solutions_compilation(instance, diagram, var_order, max_width, [Y[0]])
-
-        ##### Brute force compilation
+        ## Brute force compilation
         if not skip_brute_force_compilation:
             self.brute_force_compilation(instance, diagram, var_order, max_width, discard_method)
 
-        ##### Sampled y values compilation
+        ## HPR solution compilation
+        self.sampled_solutions_compilation(instance, diagram, var_order, max_width, [Y[0]])
+
+        ## Sampled y values compilation
         self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y[1:])
 
         # Update diagram data
@@ -124,11 +125,11 @@ class FollowerThenCompressedLeaderCompiler:
                     if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and instance.known_y_values.get(var_index) != 1:
                         zero_head.id = diagram.node_count + 1
                         # Check if node was already created
-                        if zero_head.hash_key in diagram.graph_map:
-                            found_node = diagram.graph_map[zero_head.hash_key]
+                        if zero_head.hash_key in diagram.graph_map[zero_head.layer]:
+                            found_node = diagram.graph_map[zero_head.layer][zero_head.hash_key]
                             self.operations.update_costs(node=found_node, new_node=zero_head)
                             zero_head = found_node
-                            if node.hash_key not in diagram.graph_map:
+                            if node.hash_key not in diagram.graph_map[node.layer]:
                                 # Create arc
                                 arc = Arc(tail=node, head=zero_head, value=0, cost=0, var_index=var_index, player="follower")
                                 diagram.add_arc(arc)
@@ -143,11 +144,11 @@ class FollowerThenCompressedLeaderCompiler:
                     if self.operations.check_completion_bounds(instance, completion_bounds, one_head) and instance.known_y_values.get(var_index) != 0:
                         one_head.id = diagram.node_count + 1
                         # Check if node was already created
-                        if one_head.hash_key in diagram.graph_map:
-                            found_node = diagram.graph_map[one_head.hash_key]
+                        if one_head.hash_key in diagram.graph_map[one_head.layer]:
+                            found_node = diagram.graph_map[one_head.layer][one_head.hash_key]
                             self.operations.update_costs(node=found_node, new_node=one_head)
                             one_head = found_node
-                            if node.hash_key not in diagram.graph_map:
+                            if node.hash_key not in diagram.graph_map[node.layer]:
                                 # Create arc
                                 arc = Arc(tail=node, head=one_head, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
                                 diagram.add_arc(arc)
@@ -180,102 +181,96 @@ class FollowerThenCompressedLeaderCompiler:
             # Update queues
             current_layer_queue = next_layer_queue
             next_layer_queue = deque()
-    
-        # Update in/outgoing arcs
-        diagram.update_in_outgoing_arcs()
+
         # Clean diagram
         self.operations.clean_diagram(diagram)
 
     def sampled_solutions_compilation(self, instance, diagram, var_order, max_width, Y):
         self.logger.debug("Compiling y-solutions in sample set Y ({})".format(len(Y)))
         for idx, y in enumerate(Y):
-            if diagram.width <= max_width:
-                self.logger.debug("Sampled solution {}/{}".format(idx + 1, len(Y)))
-                fixed_y_values = {j: False for j in range(instance.Fcols)}
-                child_node = diagram.root_node
+            # if diagram.width <= max_width:
+            self.logger.debug("Sampled solution {}/{}".format(idx + 1, len(Y)))
+            fixed_y_values = {j: False for j in range(instance.Fcols)}
+            child_node = diagram.root_node
 
-                for layer in range(instance.Fcols):
-                    # Choose player
-                    if layer >= instance.Fcols:
-                        player = "leader"
-                        var_index = var_order[player][layer - instance.Fcols]
+            for layer in range(instance.Fcols):
+                # Choose player
+                if layer >= instance.Fcols:
+                    player = "leader"
+                    var_index = var_order[player][layer - instance.Fcols]
+                else:
+                    player = "follower"
+                    var_index = var_order[player][layer]
+                var_index = var_order["follower"][layer]
+
+                # Create nodes
+                if diagram.node_count < constants.MAX_NODE_COUNT:
+                    node = child_node
+                    if y[var_index] == 0:
+                        child_node = self.operations.create_zero_node(layer + 1, node)
                     else:
-                        player = "follower"
-                        var_index = var_order[player][layer]
-                    var_index = var_order["follower"][layer]
+                        child_node = self.operations.create_one_node(instance, layer + 1, var_index, node, player="follower")
 
-                    # Create nodes
-                    if diagram.node_count < constants.MAX_NODE_COUNT:
-                        node = child_node
-                        if y[var_index] == 0:
-                            child_node = self.operations.create_zero_node(layer + 1, node)
-                        else:
-                            child_node = self.operations.create_one_node(instance, layer + 1, var_index, node, player="follower")
+                    # Remove fixed state components
+                    for i in range(instance.Frows):
+                        if instance.interaction[i] == "follower":
+                            if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
+                                child_node.state[i] = -float("inf")
 
-                        # Remove fixed state components
-                        for i in range(instance.Frows):
-                            if instance.interaction[i] == "follower":
-                                if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
-                                    child_node.state[i] = -float("inf")
-    
-                        # Zero head
-                        if y[var_index] == 0:
-                            child_node.id = diagram.node_count + 1
-                            # Check if node was already created
-                            if child_node.hash_key in diagram.graph_map:
-                                found_node = diagram.graph_map[child_node.hash_key]
-                                self.operations.update_costs(node=found_node, new_node=child_node)
-                                child_node = found_node
-                                if node.hash_key not in diagram.graph_map:
-                                    # Create arc
-                                    arc = Arc(tail=node, head=child_node, value=0, cost=0, var_index=var_index, player="follower")
-                                    diagram.add_arc(arc)
-                            else:
-                                diagram.add_node(child_node)
+                    # Zero head
+                    if y[var_index] == 0:
+                        child_node.id = diagram.node_count + 1
+                        # Check if node was already created
+                        if child_node.hash_key in diagram.graph_map[child_node.layer]:
+                            found_node = diagram.graph_map[child_node.layer][child_node.hash_key]
+                            self.operations.update_costs(node=found_node, new_node=child_node)
+                            child_node = found_node
+                            if node.hash_key not in diagram.graph_map[node.layer]:
                                 # Create arc
                                 arc = Arc(tail=node, head=child_node, value=0, cost=0, var_index=var_index, player="follower")
                                 diagram.add_arc(arc)
-
-                                # Compile compressed leader layer
-                                if layer == instance.Fcols - 1:
-                                    arc = Arc(tail=child_node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
-                                    for i in range(instance.Frows):
-                                        if instance.interaction[i] == "both":
-                                            arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
-                                    diagram.add_arc(arc)
-                        
-                        # One head
                         else:
-                            child_node.id = diagram.node_count + 1
-                            # Check if node was already created
-                            if child_node.hash_key in diagram.graph_map:
-                                found_node = diagram.graph_map[child_node.hash_key]
-                                self.operations.update_costs(node=found_node, new_node=child_node)
-                                child_node = found_node
-                                if node.hash_key not in diagram.graph_map:
-                                    # Create arc
-                                    arc = Arc(tail=node, head=child_node, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
-                                    diagram.add_arc(arc)
-                            else:
-                                diagram.add_node(child_node)
+                            diagram.add_node(child_node)
+                            # Create arc
+                            arc = Arc(tail=node, head=child_node, value=0, cost=0, var_index=var_index, player="follower")
+                            diagram.add_arc(arc)
+
+                            # Compile compressed leader layer
+                            if layer == instance.Fcols - 1:
+                                arc = Arc(tail=child_node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
+                                for i in range(instance.Frows):
+                                    if instance.interaction[i] == "both":
+                                        arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
+                                diagram.add_arc(arc)
+                    
+                    # One head
+                    else:
+                        child_node.id = diagram.node_count + 1
+                        # Check if node was already created
+                        if child_node.hash_key in diagram.graph_map[child_node.layer]:
+                            found_node = diagram.graph_map[child_node.layer][child_node.hash_key]
+                            self.operations.update_costs(node=found_node, new_node=child_node)
+                            child_node = found_node
+                            if node.hash_key not in diagram.graph_map[node.layer]:
                                 # Create arc
                                 arc = Arc(tail=node, head=child_node, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
                                 diagram.add_arc(arc)
+                        else:
+                            diagram.add_node(child_node)
+                            # Create arc
+                            arc = Arc(tail=node, head=child_node, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
+                            diagram.add_arc(arc)
 
-                                # Compile compressed leader layer
-                                if layer == instance.Fcols - 1:
-                                    arc = Arc(tail=child_node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
-                                    for i in range(instance.Frows):
-                                        if instance.interaction[i] == "both":
-                                            arc.block_values[i] = instance.b[i] - child_node.state[i] + 1 
-                                    diagram.add_arc(arc)
-                        
-                        fixed_y_values[var_index] = True
-            else:
-                self.logger.debug("Max width reached")
+                            # Compile compressed leader layer
+                            if layer == instance.Fcols - 1:
+                                arc = Arc(tail=child_node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
+                                for i in range(instance.Frows):
+                                    if instance.interaction[i] == "both":
+                                        arc.block_values[i] = instance.b[i] - child_node.state[i] + 1 
+                                diagram.add_arc(arc)
+                    
+                    fixed_y_values[var_index] = True
 
-        # Update in/outgoing arcs
-        diagram.update_in_outgoing_arcs()
         # Clean diagram
         self.operations.clean_diagram(diagram)
     

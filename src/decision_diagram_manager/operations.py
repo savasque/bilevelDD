@@ -236,8 +236,8 @@ class Operations:
             elif discard_method == "random":
                 sorted_queue = queue
                 shuffle(sorted_queue)
-            elif discard_method == "maxmin_slack":
-                sorted_queue = deque(sorted(queue, key=lambda x: (min(instance.b[i] - x.state[i] for i in range(instance.Frows)), -x.follower_cost), reverse=True))
+            elif discard_method == "incoming_degree":
+                sorted_queue = deque(sorted(queue, key=lambda x: len(x.incoming_arcs), reverse=True))
         else:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 
@@ -279,16 +279,11 @@ class Operations:
         self.bottom_up_filtering(diagram)
 
         # Relabel nodes (Not required)
-        queue = deque([diagram.root_node])
         label = 1
-        while queue:
-            node = queue.popleft()
-            for arc in node.outgoing_arcs:
-                child_node = arc.head
-                if child_node.id != "sink":
-                    child_node.id = label
-                    queue.append(child_node)
-                    label += 1
+        for layer in range(1, diagram.sink_node.layer):
+            for node in diagram.graph_map[layer].values():
+                node.id = label
+                label += 1
 
         self.logger.debug("Bottom-up filtering done -> Time elapsed: {} s".format(time() - t0))
 
@@ -297,15 +292,15 @@ class Operations:
             node.outgoing_arcs = list()
         diagram.nodes = list()
         diagram.arcs = list()
-        diagram.graph_map = dict()
+        diagram.graph_map = {layer: dict() for layer in range(diagram.sink_node.layer + 1)}
         diagram.add_node(diagram.root_node)
         diagram.add_node(diagram.sink_node)
         queue = deque([diagram.sink_node])
         while queue:
             node = queue.popleft()
             for arc in node.incoming_arcs:
-                if arc.tail.hash_key not in diagram.graph_map:
+                if arc.tail.hash_key not in diagram.graph_map[arc.tail.layer]:
                     diagram.add_node(arc.tail)
                     queue.append(arc.tail)
-                diagram.add_arc(arc)
+                diagram.add_arc(arc, update_in_outgoing_arcs=False)
                 arc.tail.outgoing_arcs.append(arc)

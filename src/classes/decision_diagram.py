@@ -24,27 +24,25 @@ class DecisionDiagram:
     
     @property
     def width(self):
-        return max(len(nodes) for nodes in self.layers.values())
+        return max(len(self.graph_map[layer]) for layer in range(self.sink_node.layer))
     
     @property
-    def layers(self):
-        return {layer: [node for node in self.nodes if node.layer == layer] for layer in range(self.sink_node.layer + 1)}
-    
-    @property
-    def avg_incoming_degree(self):
-        import numpy as np
-        return np.mean(len(node.incoming_arcs) for node in self.nodes if node.id not in ["root", "sink"])
+    def num_merges(self):
+        return len([node for node in self.nodes if node.id != "sink" and len(node.incoming_arcs) >= 2])
     
     def add_node(self, node):
-        self.graph_map[node.hash_key] = node
+        self.graph_map[node.layer][node.hash_key] = node
         self.nodes.append(node)
         if node.id == "root":
             self.root_node = node
         elif node.id == "sink":
             self.sink_node = node
 
-    def add_arc(self, arc):
+    def add_arc(self, arc, update_in_outgoing_arcs=True):
         self.arcs.append(arc)
+        if update_in_outgoing_arcs:
+            arc.tail.outgoing_arcs.append(arc)
+            arc.head.incoming_arcs.append(arc)
 
     def update_in_outgoing_arcs(self):
         for arc in self.arcs:
