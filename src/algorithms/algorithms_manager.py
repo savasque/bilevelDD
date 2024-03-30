@@ -91,6 +91,9 @@ class AlgorithmsManager:
         self.logger.info(
             "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result)
         )
+        self.logger.debug(
+            "Runtimes -> Compilation: {compilation_runtime} - Model build: {model_build_runtime} - Model: {model_runtime}".format(**result)
+        )
 
         return result
 
@@ -358,9 +361,10 @@ class AlgorithmsManager:
         return results
     
     def check_solution_feasibility(self, instance, solution):
-        if instance.A and not np.all(instance.A @ solution["x"] + instance.B @ solution["y"] <= instance.a):
+        tol = 1e-6
+        if instance.A and not np.all(instance.A @ solution["x"] + instance.B @ solution["y"] <= instance.a + tol):
             return False, "leader_infeasible"
-        if not np.all(instance.C @ solution["x"] + instance.D @ solution["y"] <= instance.b):
+        if not np.all(instance.C @ solution["x"] + instance.D @ solution["y"] <= instance.b + tol):
             return False, "follower_infeasible"
         
         return True, "feasible"
