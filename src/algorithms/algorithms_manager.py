@@ -38,7 +38,7 @@ class AlgorithmsManager:
 
         # Get HPR bounds
         HPR_value, HPR_optimal_solution, UB, _ = self.get_HPR_bounds(instance)
-        self.logger.info("HPR solved -> LB: {} - UB: {}".format(HPR_value, UB))
+        self.logger.info("Updated bounds -> LB: {} - UB: {}".format(HPR_value, UB))
 
         # Build set Y
         if constants.SAMPLING_LENGTH:
@@ -47,6 +47,11 @@ class AlgorithmsManager:
         else:
             Y = [HPR_optimal_solution["y"]]
             sampling_runtime = 0
+
+        # HPR_value = None
+        # Y = []
+        # sampling_runtime = 0
+        # UB = float("inf")
 
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
@@ -92,7 +97,7 @@ class AlgorithmsManager:
             "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result)
         )
         self.logger.debug(
-            "Runtimes -> Compilation: {compilation_runtime} - Model build: {model_build_runtime} - Model: {model_runtime}".format(**result)
+            "Runtimes -> Compilation: {compilation_runtime} - Model build: {model_build_runtime} - Model solve: {model_runtime}".format(**result)
         )
 
         return result
@@ -112,6 +117,10 @@ class AlgorithmsManager:
         # Build set Y
         Y = [HPR_optimal_solution["y"]]
 
+        # HPR_value = None
+        # Y = []
+        # UB = float("inf")
+
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
             diagram, instance, compilation_method, max_width, 
@@ -124,7 +133,7 @@ class AlgorithmsManager:
                 instance, diagram, time_limit=solver_time_limit
             )
 
-        self.logger.info("New bounds -> LB: {lower_bound} - UB: {upper_bound}".format(**result))
+        self.logger.warning("New bounds -> LB: {lower_bound} - UB: {upper_bound}".format(**result))
         model.Params.OutputFlag = 0
 
         LB = result["lower_bound"]
@@ -135,7 +144,7 @@ class AlgorithmsManager:
             if instance.d @ result["vars"]["y"] <= instance.d @ result["opt_y"]:
                 self.logger.warning("Bilevel solution found!")
                 break
-            else:
+            elif time() - t0 >= 5:
                 # Current solution is not bilevel feasible. Add a cut and solve again
                 # Build extra DD
                 diagram = DecisionDiagram(iter + 1)
@@ -153,7 +162,7 @@ class AlgorithmsManager:
                 model.optimize()
                 self.logger.info("Model succesfully solved -> Time elapsed: {} s".format(model.runtime))
                 result = self.get_results(instance, diagram, model, vars, model_building_runtime=0)
-                if result["upper_bound"] < UB or result["lower_bound"] > LB:
+                if result["upper_bound"] <= UB - 1 or result["lower_bound"] >= LB + 1:
                     LB_diff = max(result["lower_bound"] - LB, 0)
                     UB_diff = max(UB - result["upper_bound"], 0)
                     LB = max(result["lower_bound"], LB)
@@ -171,7 +180,7 @@ class AlgorithmsManager:
         result["sampling"] = True if len(Y) >= 2 else False
         result["Y_length"] = len(Y)
         result["sampling_runtime"] = 0
-        result["total_runtime"] = round(total_runtime)
+        result["total_runtime"] = round(total_runtime + instance.load_runtime)
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
         result["num_arcs"] = diagram.arc_count
@@ -319,6 +328,7 @@ class AlgorithmsManager:
             "upper_bound": float("inf"),
             "bilevel_gap": None,
             "total_runtime": None,
+            "data_load_runtime": round(instance.load_runtime),
             "compilation_runtime": round(diagram.compilation_runtime),
             "reduce_algorithm_runtime": round(diagram.reduce_algorithm_runtime),
             "model_build_runtime": round(model_building_runtime),

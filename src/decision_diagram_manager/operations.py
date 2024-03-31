@@ -1,6 +1,7 @@
 from time import time
 from collections import deque
 from random import shuffle
+import numpy as np
 
 from classes.node import Node
 
@@ -73,14 +74,17 @@ class Operations:
 
         self.logger.info("Diagram succesfully reduced. Time elapsed: {} s - Nodes: {} - Arcs: {} - Width: {}".format(time() - t0, len(diagram.nodes), len(diagram.arcs), diagram.width))
 
-    def ordering_heuristic(self, instance, ordering_heuristic):
+    def ordering_heuristic(self, instance, ordering_heuristic, compressed_leader=False):
         """
             This method retrieves a variable ordering.
 
             Args: instance (class Instance)
             Returns: dict of sorted indices (dict)
         """
-        order = {"leader": list(), "follower": list()}
+        
+        order = {"leader": list(), "follower": np.array([])}
+        if compressed_leader:
+            order["leader"] = [j for j in range(instance.Lcols)]
 
         # Sum coeffs of the left hand side
         if ordering_heuristic == "lhs_coeffs":
@@ -88,34 +92,42 @@ class Operations:
             for j in range(instance.Fcols):
                 coeffs_sum = sum(instance.D[i][j] for i in range(instance.Frows) if instance.interaction[i] == "both")
                 order["follower"].append((j, coeffs_sum))
-            for j in range(instance.Lcols):
-                coeffs_sum = sum(instance.C[i][j] for i in range(instance.Frows))
-                order["leader"].append((j, coeffs_sum))
-            for key in order:  
-                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order[key] = [i[0] for i in order[key]]
+            order["follower"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+            order["follower"] = [i[0] for i in order["follower"]]
+            if not compressed_leader:
+                for j in range(instance.Lcols):
+                    coeffs_sum = sum(instance.C[i][j] for i in range(instance.Frows))
+                    order["leader"].append((j, coeffs_sum))
+                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order["leader"] = [i[0] for i in order["leader"]]
 
         # Leader cost
         elif ordering_heuristic == "leader_cost":
             self.logger.debug("Variable ordering heuristic: leader cost")
             for j in range(instance.Fcols):
                 order["follower"].append((j, instance.c_follower[j]))
-            for j in range(instance.Lcols):
-                order["leader"].append((j, instance.c_leader[j]))
-            for key in order: 
-                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order[key] = [i[0] for i in order[key]]
+            order["follower"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+            order["follower"] = [i[0] for i in order["follower"]]
+            if not compressed_leader:
+                for j in range(instance.Lcols):
+                    order["leader"].append((j, instance.c_leader[j]))
+                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order["leader"] = [i[0] for i in order["leader"]]
 
-        # Competitive costs
+        # Follower costs
         elif ordering_heuristic == "follower_cost":
             self.logger.debug("Variable ordering heuristic: follower cost")
+            costs = np.array([])
             for j in range(instance.Fcols):
-                order["follower"].append((j, instance.d[j]))
-            for j in range(instance.Lcols):
-                order["leader"].append((j, instance.c_leader[j]))
-            for key in order:
-                order[key].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order[key] = [i[0] for i in order[key]]
+                pos = costs.searchsorted(instance.d[j])
+                costs = np.insert(costs, pos, instance.d[j])
+                order["follower"] = np.insert(order["follower"], pos, j)
+            order["follower"] = order["follower"].astype(int)
+            if not compressed_leader:
+                for j in range(instance.Lcols):
+                    order["leader"].append((j, instance.c_leader[j]))
+                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order["leader"] = [i[0] for i in order["leader"]]
 
         # Leader feasibility
         elif ordering_heuristic == "leader_feasibility":
@@ -124,16 +136,18 @@ class Operations:
                 order["follower"].append((j, max([instance.D[i][j] for i in range(instance.Frows)]), sum([instance.D[i][j] for i in range(instance.Frows)])))
             order["follower"].sort(key=lambda x: (x[1], x[2]))  # Sort variables in ascending order
             order["follower"] = [i[0] for i in order["follower"]]
-            for j in range(instance.Lcols):
-                order["leader"].append((j, instance.c_leader[j]))
-            order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
-            order["leader"] = [i[0] for i in order["leader"]]
+            if not compressed_leader:
+                for j in range(instance.Lcols):
+                    order["leader"].append((j, instance.c_leader[j]))
+                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
+                order["leader"] = [i[0] for i in order["leader"]]
                 
         # Lexicographic
         elif ordering_heuristic == "lexicographic":
             self.logger.debug("Variable ordering heuristic: lexicographic")
             order["follower"] = [i for i in range(instance.Fcols)]
-            order["leader"] = [i for i in range(instance.Lcols)]
+            if not compressed_leader:
+                order["leader"] = [i for i in range(instance.Lcols)]
 
         # Max-connected-degree
         elif ordering_heuristic == "max_connected_degree":
@@ -168,7 +182,8 @@ class Operations:
                 order["follower"].append(column[0])
                 remaining_columns.pop(column[1][0])
 
-            order["leader"] = [i for i in range(instance.Lcols)]
+            if not compressed_leader:
+                order["leader"] = [i for i in range(instance.Lcols)]
 
         else:
             raise ValueError("Invalid ordering heristic value")
@@ -197,10 +212,9 @@ class Operations:
 
         return node
 
-    def check_completion_bounds(self, instance, completion_bounds, node):
-        for i in range(instance.Frows):
-            if node.state[i] + completion_bounds[i] > instance.b[i]:
-                return False
+    def check_completion_bounds(self, instance, completion_bounds, node):           
+        if np.any([node.state + completion_bounds > instance.b]):
+            return False
         
         return True
 
@@ -230,6 +244,8 @@ class Operations:
     def reduce_queue(self, instance, discard_method, queue, max_width, player):
         if player == "follower":
             if discard_method == "follower_cost":
+                # idx_list = np.argsort(np.array([int(0.9 * x.follower_cost + 0.1 * x.leader_cost) for x in queue]))
+                # sorted_queue = deque([queue[i] for i in idx_list])
                 sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
             elif discard_method == "minmax_state":
                 sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), sum(x.state), x.follower_cost)))

@@ -8,7 +8,6 @@ from classes.node import Node
 from classes.arc import Arc
 from decision_diagram_manager.operations import Operations
 
-from algorithms.utils.solve_HPR import solve as solve_HPR
 from algorithms.utils.solve_follower_problem import solve as solve_follower_problem
 
 
@@ -27,7 +26,7 @@ class FollowerThenCompressedLeaderCompiler:
 
         t0 = time()
         self.logger.info("Compiling diagram -> Compilation method: follower_then_compressed_leader - MaxWidth: {} - OrderingHeuristic: {} - DiscardMethod: {}".format(max_width, ordering_heuristic, discard_method))
-        var_order = self.operations.ordering_heuristic(instance, ordering_heuristic)
+        var_order = self.operations.ordering_heuristic(instance, ordering_heuristic, compressed_leader=True)
 
         diagram.max_width = max_width
         diagram.ordering_heuristic = ordering_heuristic
@@ -35,7 +34,7 @@ class FollowerThenCompressedLeaderCompiler:
         diagram.graph_map = {l: dict() for l in range(instance.Fcols + 2)}
 
         # Create root and sink nodes
-        root_node = Node(id="root", layer=0, state=[0] * instance.Frows)
+        root_node = Node(id="root", layer=0, state=np.zeros(instance.Frows))
         for i in range(instance.Frows):
             if instance.interaction[i] == "leader":
                 root_node.state[i] = -float("inf")
@@ -44,7 +43,8 @@ class FollowerThenCompressedLeaderCompiler:
         diagram.add_node(sink_node)
 
         # Create dummy long arc
-        M = solve_follower_problem(instance, sense="maximize")[0]
+        self.logger.debug("Solving follower problem to build dummy arc")
+        M = 1e6 #solve_follower_problem(instance, sense="maximize")[0]
         self.logger.debug("Big-M value: {}".format(M))
         dummy_arc = Arc(tail=root_node, head=sink_node, value=0, cost=M, var_index=-1, player=None)
         diagram.add_arc(dummy_arc)
@@ -53,11 +53,12 @@ class FollowerThenCompressedLeaderCompiler:
         if not skip_brute_force_compilation:
             self.brute_force_compilation(instance, diagram, var_order, max_width, discard_method)
 
-        ## HPR solution compilation
-        self.sampled_solutions_compilation(instance, diagram, var_order, max_width, [Y[0]])
+        if Y:
+            ## HPR solution compilation
+            self.sampled_solutions_compilation(instance, diagram, var_order, max_width, [Y[0]])
 
-        ## Sampled y values compilation
-        self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y[1:])
+            ## Sampled y values compilation
+            self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y[1:])
 
         # Update diagram data
         diagram.compilation_method = "follower_then_compressed_leader"
@@ -78,16 +79,7 @@ class FollowerThenCompressedLeaderCompiler:
         next_layer_queue = deque()
 
         # Compute completion bounds for follower constrs
-        completion_bounds = [0] * instance.Frows
-        for i in range(instance.Frows):
-            if instance.interaction[i] == "leader":
-                completion_bounds[i] = -float("inf")
-            else:
-                for j in range(instance.Lcols):
-                    completion_bounds[i] += min(0, instance.C[i][j])
-                    # completion_bounds[i] += HPR_solution["x"][j] * instance.C[i][j] 
-                for j in range(instance.Fcols):
-                    completion_bounds[i] += min(0, instance.D[i][j])
+        completion_bounds = self.initialize_completion_bounds(instance)
 
         # Create new nodes and arcs
         fixed_y_values = {j: False for j in range(instance.Fcols)}
@@ -114,12 +106,8 @@ class FollowerThenCompressedLeaderCompiler:
                     zero_head = self.operations.create_zero_node(layer + 1, parent_node=node)
                     one_head = self.operations.create_one_node(instance, layer + 1, var_index, parent_node=node, player=player)
 
-                    # Remove fixed state components
-                    for i in range(instance.Frows):
-                        if instance.interaction[i] == "follower":
-                            if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
-                                zero_head.state[i] = -float("inf")
-                                one_head.state[i] = -float("inf")
+                    # # Remove fixed state components
+                    # self.remove_fixed_state_component(instance, fixed_y_values, [zero_head, one_head])
 
                     # Zero head
                     if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and instance.known_y_values.get(var_index) != 1:
@@ -211,11 +199,8 @@ class FollowerThenCompressedLeaderCompiler:
                     else:
                         child_node = self.operations.create_one_node(instance, layer + 1, var_index, node, player="follower")
 
-                    # Remove fixed state components
-                    for i in range(instance.Frows):
-                        if instance.interaction[i] == "follower":
-                            if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
-                                child_node.state[i] = -float("inf")
+                    # # Remove fixed state components
+                    # self.remove_fixed_state_component(instance, fixed_y_values, [child_node])
 
                     # Zero head
                     if y[var_index] == 0:
@@ -275,7 +260,7 @@ class FollowerThenCompressedLeaderCompiler:
         self.operations.clean_diagram(diagram)
     
     def initialize_completion_bounds(self, instance):
-        completion_bounds = [0] * instance.Frows
+        completion_bounds = np.zeros(instance.Frows) #[0] * instance.Frows
         for i in range(instance.Frows):
             if instance.interaction[i] == "leader":
                 completion_bounds[i] = -float("inf")
@@ -287,3 +272,10 @@ class FollowerThenCompressedLeaderCompiler:
                     completion_bounds[i] += min(0, instance.D[i][j])
         
         return completion_bounds
+    
+    def remove_fixed_state_component(self, instance, fixed_y_values, nodes):
+        for i in range(instance.Frows):
+            if instance.interaction[i] == "follower":
+                if np.all([fixed_y_values[j] for j in range(instance.Fcols) if instance.D[i][j] != 0]):  # All y values have already been set
+                    for node in nodes:
+                        node.state[i] = -float("inf")

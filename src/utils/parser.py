@@ -5,6 +5,7 @@ import gurobipy as gp
 import numpy as np
 import pandas as pd
 import logzero
+from time import time
 
 from classes.instance import Instance
 
@@ -43,6 +44,7 @@ class Parser:
         return data
 
     def build_instance(self, file_name):
+        t0 = time()
         mps_file = self.load_mps_file(file_name)
         aux_file = self.load_aux_file(file_name)
         Lrows = [i for i in range(len(mps_file["constrs"])) if i not in aux_file["LR"]]
@@ -104,7 +106,7 @@ class Parser:
             len(Frows)
         ))
 
-        instance = Instance(file_name, data)
+        instance = Instance(file_name, time() - t0, data)
 
         # Compute interaction in follower constrs
         for i in range(len(Frows)):

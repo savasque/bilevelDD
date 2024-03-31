@@ -1,6 +1,7 @@
 class Instance:
-    def __init__(self, name, data):
+    def __init__(self, name, load_runtime, data):
         self.name = name
+        self.load_runtime = load_runtime
         self.A = data["A"]
         self.B = data["B"]
         self.C = data["C"]
