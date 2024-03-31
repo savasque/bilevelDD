@@ -337,7 +337,7 @@ class AlgorithmsManager:
             "num_constrs": model.numConstrs,
             "num_nodes": diagram.node_count,
             "num_arcs": diagram.arc_count,
-            "num_node_merges": len([node for node in diagram.nodes if node.id != "sink_node" and len(node.incoming_arcs) >= 2])
+            "num_node_merges": diagram.num_merges
         }
         results["instance"] = instance.name
         results["width"] = diagram.width
