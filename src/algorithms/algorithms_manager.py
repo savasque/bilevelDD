@@ -126,6 +126,7 @@ class AlgorithmsManager:
             diagram, instance, compilation_method, max_width, 
             ordering_heuristic, discard_method, Y
         )
+        initial_width = int(diagram.width)
 
         # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
@@ -188,6 +189,8 @@ class AlgorithmsManager:
         result["upper_bound"] = min(result["upper_bound"], UB)
         result["bilevel_gap"] = round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = iter
+        result["width"] = initial_width
+        result["max_width"] = max_width
 
         self.logger.info("Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - Iters: {iters}".format(**result))
 
