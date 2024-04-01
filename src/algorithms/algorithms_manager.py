@@ -144,7 +144,7 @@ class AlgorithmsManager:
             if instance.d @ result["vars"]["y"] <= instance.d @ result["opt_y"]:
                 self.logger.warning("Bilevel solution found!")
                 break
-            elif time() - t0 >= 5:
+            else:
                 # Current solution is not bilevel feasible. Add a cut and solve again
                 # Build extra DD
                 diagram = DecisionDiagram(iter + 1)
@@ -160,14 +160,15 @@ class AlgorithmsManager:
                 model.Params.TimeLimit = solver_time_limit - (time() - t0)
                 self.logger.info("Solving new model with added cuts. Time limit: {} s".format(solver_time_limit - (time() - t0)))
                 model.optimize()
-                self.logger.info("Model succesfully solved -> Time elapsed: {} s".format(model.runtime))
-                result = self.get_results(instance, diagram, model, vars, model_building_runtime=0)
-                if result["upper_bound"] <= UB - 1 or result["lower_bound"] >= LB + 1:
-                    LB_diff = max(result["lower_bound"] - LB, 0)
-                    UB_diff = max(UB - result["upper_bound"], 0)
-                    LB = max(result["lower_bound"], LB)
-                    UB = min(result["upper_bound"], UB)
-                    self.logger.warning("New bounds -> LB: {} (+{}) - UB: {} (-{})".format(LB, LB_diff, UB, UB_diff))
+                if model.status == 2:
+                    self.logger.info("Model succesfully solved -> Time elapsed: {} s".format(model.runtime))
+                    result = self.get_results(instance, diagram, model, vars, model_building_runtime=0)
+                    if result["upper_bound"] <= UB - 1 or result["lower_bound"] >= LB + 1:
+                        LB_diff = max(result["lower_bound"] - LB, 0)
+                        UB_diff = max(UB - result["upper_bound"], 0)
+                        LB = max(result["lower_bound"], LB)
+                        UB = min(result["upper_bound"], UB)
+                        self.logger.warning("New bounds -> LB: {} (+{}) - UB: {} (-{})".format(LB, LB_diff, UB, UB_diff))
 
             iter += 1
 
@@ -188,7 +189,7 @@ class AlgorithmsManager:
         result["bilevel_gap"] = round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
         result["iters"] = iter
 
-        self.logger.info("Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result))
+        self.logger.info("Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - Iters: {iters}".format(**result))
 
         return result
     
@@ -344,8 +345,8 @@ class AlgorithmsManager:
         results["initial_width"] = diagram.initial_width
         try:
             vars = {
-                "x": [i.X for i in vars["x"].values()],
-                "y": [i.X for i in vars["y"].values()],
+                "x": [int(i.X + 0.5) for i in vars["x"].values()],
+                "y": [int(i.X + 0.5) for i in vars["y"].values()],
                 "w": [key for key, value in vars["w"].items() if value.X > 0],
             }
         except:

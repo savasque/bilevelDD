@@ -29,7 +29,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     t0 = time()
     model = gp.Model()
     model.Params.TimeLimit = time_limit
-    model.Params.IntegralityFocus = 1
+    # model.Params.IntegralityFocus = 1
 
     x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")

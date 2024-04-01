@@ -78,7 +78,4 @@ class DecisionDiagram:
         self.ordering_heuristic = diagram.ordering_heuristic
         self.compilation_method = diagram.compilation_method
         self.var_order = diagram.var_order
-
-    def remove_node(self, node):
-        del self.nodes[node.id]
         

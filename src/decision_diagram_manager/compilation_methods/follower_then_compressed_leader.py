@@ -63,6 +63,9 @@ class FollowerThenCompressedLeaderCompiler:
         # Update diagram data
         diagram.compilation_method = "follower_then_compressed_leader"
         diagram.compilation_runtime = time() - t0
+
+        # # Reduce diagram algorithm
+        # self.operations.reduce_diagram(diagram)
         
         self.logger.info("Diagram succesfully compiled -> Time elapsed: {} s - Node count: {} - Arc count: {} - Width: {}".format(
             diagram.compilation_runtime, diagram.node_count + 2, diagram.arc_count, diagram.width
