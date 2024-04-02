@@ -48,11 +48,6 @@ class AlgorithmsManager:
             Y = [HPR_optimal_solution["y"]]
             sampling_runtime = 0
 
-        # HPR_value = None
-        # Y = []
-        # sampling_runtime = 0
-        # UB = float("inf")
-
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
             diagram, instance, compilation_method, max_width, 
@@ -115,11 +110,12 @@ class AlgorithmsManager:
         self.logger.info("HPR solved -> LB: {} - UB: {}".format(HPR_value, UB))
 
         # Build set Y
-        Y = [HPR_optimal_solution["y"]]
-
-        # HPR_value = None
-        # Y = []
-        # UB = float("inf")
+        if constants.SAMPLING_LENGTH:
+            Y, sampling_runtime = self.sample_follower_solutions(instance)
+            Y = [HPR_optimal_solution["y"]] + Y
+        else:
+            Y = [HPR_optimal_solution["y"]]
+            sampling_runtime = 0
 
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
@@ -181,7 +177,7 @@ class AlgorithmsManager:
         result["HPR"] = HPR_value
         result["sampling"] = True if len(Y) >= 2 else False
         result["Y_length"] = len(Y)
-        result["sampling_runtime"] = 0
+        result["sampling_runtime"] = sampling_runtime
         result["total_runtime"] = round(total_runtime + instance.load_runtime)
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
@@ -244,10 +240,6 @@ class AlgorithmsManager:
         model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.root_node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.root_node.incoming_arcs) == 1, name="FlowRoot")
         model.addConstr(gp.quicksum(w[arc.id, diagram.id] for arc in diagram.sink_node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in diagram.sink_node.incoming_arcs) == -1, name="FlowSink")
         model.addConstrs(gp.quicksum(w[arc.id, diagram.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id, diagram.id] for arc in node.incoming_arcs) == 0 for node in diagram.nodes if node.id not in ["root", "sink"])
-
-        # # Capacity constrs
-        # model.addConstrs(w[arc.id, diagram.id] <= vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 1)
-        # model.addConstrs(w[arc.id, diagram.id] <= 1 - vars["y"][j] for j in vars["y"] for arc in diagram.arcs if arc.player == "follower" and arc.var_index == j and arc.value == 0)
 
         # Dual feasibility
         model.addConstrs((pi[arc.tail.id, diagram.id] - pi[arc.head.id, diagram.id] <= arc.cost for arc in diagram.arcs if arc.player in ["follower", None]), name="DualFeasFollower")

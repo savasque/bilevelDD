@@ -53,12 +53,14 @@ class FollowerThenCompressedLeaderCompiler:
         if not skip_brute_force_compilation:
             self.brute_force_compilation(instance, diagram, var_order, max_width, discard_method)
 
+        ## Sampled solutions compilation
         if Y:
-            ## HPR solution compilation
-            self.sampled_solutions_compilation(instance, diagram, var_order, max_width, [Y[0]])
+            self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y)
 
-            ## Sampled y values compilation
-            self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y[1:])
+        # ## Single solution-based compilation
+        # if diagram.width == 1:
+        #     self.logger.debug("Using HPR based branching")
+        #     self.HPR_based_compilation(instance, diagram, var_order, max_width, discard_method)
 
         # Update diagram data
         diagram.compilation_method = "follower_then_compressed_leader"
@@ -180,7 +182,7 @@ class FollowerThenCompressedLeaderCompiler:
         self.logger.debug("Compiling y-solutions in sample set Y ({})".format(len(Y)))
         for idx, y in enumerate(Y):
             # if diagram.width <= max_width:
-            self.logger.debug("Sampled solution {}/{}".format(idx + 1, len(Y)))
+            self.logger.debug("Compiling sampled solution {}/{}".format(idx + 1, len(Y)))
             fixed_y_values = {j: False for j in range(instance.Fcols)}
             child_node = diagram.root_node
 
@@ -260,6 +262,89 @@ class FollowerThenCompressedLeaderCompiler:
                     fixed_y_values[var_index] = True
 
         # Clean diagram
+        self.operations.clean_diagram(diagram)
+
+    def HPR_based_compilation(self, instance, diagram, var_order, max_width, discard_method):
+        # Stack of nodes
+        queue = deque()
+        node = diagram.root_node
+        while node.id != "sink":
+            if node.layer <= instance.Fcols - 1:
+                queue.appendleft(node)
+            for arc in node.outgoing_arcs:
+                if arc.player != None:
+                    node = arc.head
+        # Compute completion bounds for follower constrs
+        initial_completion_bounds = self.initialize_completion_bounds(instance)
+
+        while queue and diagram.width <= max_width:
+            node = queue.popleft()
+            completion_bounds = initial_completion_bounds.copy()
+            # Update completion bounds
+            for layer in range(node.layer):
+                var_index = var_order["follower"][layer]
+                self.operations.update_completions_bounds(instance, completion_bounds, var_index, player="follower")
+            # Select player
+            player = "follower"
+            layer = node.layer
+            # Choose player
+            if layer >= instance.Fcols:
+                player = "leader"
+                var_index = var_order[player][layer - instance.Fcols]
+            else:
+                var_index = var_order[player][layer]
+
+            if player == "follower":
+                # Create nodes
+                zero_head = self.operations.create_zero_node(layer + 1, parent_node=node)
+                one_head = self.operations.create_one_node(instance, layer + 1, var_index, parent_node=node, player="follower")
+
+                # Zero head
+                if self.operations.check_completion_bounds(instance, completion_bounds, zero_head) and instance.known_y_values.get(var_index) != 1:
+                    zero_head.id = diagram.node_count + 1
+                    # Check if node was already created
+                    if zero_head.hash_key in diagram.graph_map[zero_head.layer]:
+                        found_node = diagram.graph_map[zero_head.layer][zero_head.hash_key]
+                        self.operations.update_costs(node=found_node, new_node=zero_head)
+                        zero_head = found_node
+                        if node.hash_key not in diagram.graph_map[node.layer]:
+                            # Create arc
+                            arc = Arc(tail=node, head=zero_head, value=0, cost=0, var_index=var_index, player="follower")
+                            diagram.add_arc(arc)
+                    else:
+                        diagram.add_node(zero_head)  # TODO: add nodes after reducing next_layer_queue
+                        # Create arc
+                        arc = Arc(tail=node, head=zero_head, value=0, cost=0, var_index=var_index, player="follower")
+                        diagram.add_arc(arc)
+                        queue.appendleft(zero_head)
+                
+                # One head
+                if self.operations.check_completion_bounds(instance, completion_bounds, one_head) and instance.known_y_values.get(var_index) != 0:
+                    one_head.id = diagram.node_count + 1
+                    # Check if node was already created
+                    if one_head.hash_key in diagram.graph_map[one_head.layer]:
+                        found_node = diagram.graph_map[one_head.layer][one_head.hash_key]
+                        self.operations.update_costs(node=found_node, new_node=one_head)
+                        one_head = found_node
+                        if node.hash_key not in diagram.graph_map[node.layer]:
+                            # Create arc
+                            arc = Arc(tail=node, head=one_head, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
+                            diagram.add_arc(arc)
+                    else:
+                        diagram.add_node(one_head)  # TODO: add nodes after reducing next_layer_queue
+                        # Create arc
+                        arc = Arc(tail=node, head=one_head, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
+                        diagram.add_arc(arc)
+                        queue.appendleft(one_head)
+
+            # Compile compressed leader layer
+            else:
+                arc = Arc(tail=node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
+                for i in range(instance.Frows):
+                    if instance.interaction[i] == "both":
+                        arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
+                diagram.add_arc(arc) 
+
         self.operations.clean_diagram(diagram)
     
     def initialize_completion_bounds(self, instance):
