@@ -15,7 +15,7 @@ def solve(instance, x=None, sense="minimize"):
          name="FollowerHPR"
     )
 
-    obj = instance.d @ y.values()
+    obj = instance.d @ list(y.values())
 
     model.setObjective(obj, sense=gp.GRB.MINIMIZE if sense == "minimize" else gp.GRB.MAXIMIZE)
 

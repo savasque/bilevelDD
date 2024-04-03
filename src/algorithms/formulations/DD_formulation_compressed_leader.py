@@ -56,8 +56,8 @@ def get_model(instance, diagram, time_limit, incumbent):
     }
 
     # HPR constrs
-    model.addConstrs((A[i] @ x.values() + B[i] @ y.values() <= a[i] for i in range(Lrows)), name="LeaderHPR")
-    model.addConstrs((C[i] @ x.values() + D[i] @ y.values() <= b[i] for i in range(Frows)), name="FollowerHPR")
+    model.addConstrs((A[i] @ list(x.values()) + B[i] @ list(y.values()) <= a[i] for i in range(Lrows)), name="LeaderHPR")
+    model.addConstrs((C[i] @ list(x.values()) + D[i] @ list(y.values()) <= b[i] for i in range(Frows)), name="FollowerHPR")
 
     # Value-function constr
     model.addConstr(gp.quicksum(d[j] * y[j] for j in range(Fcols)) <= gp.quicksum(arc.cost * w[arc.id] for arc in arcs), name="ValueFunction")
@@ -85,7 +85,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     # Blocking definition
     M_blocking = {i: -sum(min(C[i][j], 0) for j in range(Lcols)) for i in range(Frows)}
     model.addConstrs(
-        C[i] @ x.values() >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) 
+        C[i] @ list(x.values()) >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) 
         for arc in arcs if arc.player == "leader" for i in interaction_indices
     )
 
@@ -93,7 +93,7 @@ def get_model(instance, diagram, time_limit, incumbent):
     model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
 
     # Objective function
-    obj = c_leader @ x.values() + c_follower @ y.values()
+    obj = c_leader @ list(x.values()) + c_follower @ list(y.values())
     model.setObjective(obj, sense=gp.GRB.MINIMIZE)
 
     return model, vars, time() - t0

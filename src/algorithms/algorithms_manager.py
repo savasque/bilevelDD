@@ -258,7 +258,7 @@ class AlgorithmsManager:
 
         # Blocking definition
         M_blocking = {i: sum(max(-instance.C[i][j], 0) for j in range(instance.Lcols)) for i in range(instance.Frows)}
-        model.addConstrs(instance.C[i] @ vars["x"].values() >= -M_blocking[i] + beta[arc.id, diagram.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in diagram.arcs if arc.player == "leader" for i in interaction_indices)     
+        model.addConstrs(instance.C[i] @ list(vars["x"].values()) >= -M_blocking[i] + beta[arc.id, diagram.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in diagram.arcs if arc.player == "leader" for i in interaction_indices)     
 
     def run_DD_reformulation(self, instance, diagram, time_limit, incumbent=dict()):
         # Solve DD reformulation
@@ -318,7 +318,7 @@ class AlgorithmsManager:
             "compilation_method": diagram.compilation_method,
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
-            "lower_bound": model.ObjBound,
+            "lower_bound": model.ObjVal if model.MIPGap < 1e3 else model.ObjBound,
             "best_obj_val": objval,
             "mip_gap": model.MIPGap,
             "upper_bound": float("inf"),

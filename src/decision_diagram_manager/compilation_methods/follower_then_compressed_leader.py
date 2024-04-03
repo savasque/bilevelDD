@@ -57,8 +57,8 @@ class FollowerThenCompressedLeaderCompiler:
         if Y:
             self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y)
 
-        # ## Single solution-based compilation
-        # if diagram.width == 1:
+        # ## Single solution-based compilation (last resort)
+        # if diagram.width == 1 and len(Y) == 1:
         #     self.logger.debug("Using HPR based branching")
         #     self.HPR_based_compilation(instance, diagram, var_order, max_width, discard_method)
 

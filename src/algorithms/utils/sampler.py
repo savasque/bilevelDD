@@ -115,12 +115,13 @@ class Sampler:
         x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
         y = model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
         # HPR constrs
-        model.addConstrs((instance.A[i] @ x.values() + instance.B[i] @ y.values() <= instance.a[i] for i in range(instance.Lrows)), name="leader_constrs")
-        model.addConstrs((instance.C[i] @ x.values() + instance.D[i] @ y.values() <= instance.b[i] for i in range(instance.Frows)), name="follower_constrs")
+        model.addConstrs((instance.A[i] @ list(x.values()) + instance.B[i] @ list(y.values()) <= instance.a[i] for i in range(instance.Lrows)), name="leader_constrs")
+        model.addConstrs((instance.C[i] @ list(x.values()) + instance.D[i] @ list(y.values()) <= instance.b[i] for i in range(instance.Frows)), name="follower_constrs")
         # Get known optimal y-values (Fischetti et al, 2017)
         model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
         # Objective function
-        obj_func = instance.d @ y.values()
+        obj_func = instance.d @ list(y.values())
+        # obj_func = gp.quicksum(instance.D[i] @ list(y.values()) for i in range(instance.Frows))
         model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
         model.optimize()
 
@@ -130,9 +131,9 @@ class Sampler:
                 break
 
             model, y = queue.popleft()
-            # Tabu list
-            for tabu_y in Y.values():
-                model.addConstr(self.hamming_distance(y, tabu_y) >= 1)
+            # # Tabu list
+            # for tabu_y in Y.values():
+            #     model.addConstr(self.hamming_distance(y, tabu_y) >= 1)
             model.optimize()
             if model.status == 2:
                 y_value = [i.X for i in y.values()]
@@ -141,7 +142,7 @@ class Sampler:
                 # if str(y) in Y:
                 #     a = None
 
-                Y[str(y)] = y_value
+                Y[str(y_value)] = y_value
                 self.logger.debug("Sampled solutions: {} - Remaining queue size: {}".format(len(Y), len(queue)))
 
                 # for i in range(instance.Lrows):
@@ -161,16 +162,26 @@ class Sampler:
                     
                 #     queue.append((new_model, new_y))
 
-                for i in range(instance.Frows):
-                    if instance.interaction[i] == "both":
-                        # Create new model with disjunction
-                        new_model = model.copy()
-                        x = {j: new_model.getVarByName("x[{}]".format(j)) for j in range(instance.Lcols)}
-                        new_y = {j: new_model.getVarByName("y[{}]".format(j)) for j in range(instance.Fcols)}
-                        # Add constr defining disjuntion
-                        new_model.addConstr(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1)
+                # for i in range(instance.Frows):
+                #     if instance.interaction[i] == "both":
+                #         # Create new model with disjunction
+                #         new_model = model.copy()
+                #         x = {j: new_model.getVarByName("x[{}]".format(j)) for j in range(instance.Lcols)}
+                #         new_y = {j: new_model.getVarByName("y[{}]".format(j)) for j in range(instance.Fcols)}
+                #         # Add constr defining disjuntion
+                #         new_model.addConstr(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1)
                         
-                        queue.append((new_model, new_y))
+                #         queue.append((new_model, new_y))
+
+                # Create new model with disjunction
+                new_model = model.copy()
+                x = {j: new_model.getVarByName("x[{}]".format(j)) for j in range(instance.Lcols)}
+                new_y = {j: new_model.getVarByName("y[{}]".format(j)) for j in range(instance.Fcols)}
+                z = new_model.addVars(range(instance.Frows), vtype=gp.GRB.BINARY)
+                new_model.addConstrs(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1 - 1e6 * (1 - z[i]) for i in range(instance.Frows))
+                new_model.addConstr(gp.quicksum(z[i] for i in range(instance.Frows)) >= 1)
+                
+                queue.append((new_model, new_y))
         
         # # Sanity check
         # for y_value in Y.values():

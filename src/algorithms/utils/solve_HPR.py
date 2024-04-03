@@ -13,7 +13,7 @@ def solve(instance, obj="leader", sense="minimize"):
 
     # Objective function
     if obj == "leader":
-        obj_func = instance.c_leader @ x.values() + instance.c_follower @ y.values()
+        obj_func = instance.c_leader @ list(x.values()) + instance.c_follower @ list(y.values())
     elif obj == "follower":
         obj_func = instance.d @ y.values()
     model.setObjective(obj_func, sense=gp.GRB.MINIMIZE if sense == "minimize" else gp.GRB.MAXIMIZE)
