@@ -55,6 +55,8 @@ def get_model(instance, diagram, time_limit, incumbent):
         'beta': beta
     }
 
+    model._vars = vars
+
     # HPR constrs
     model.addConstrs((A[i] @ list(x.values()) + B[i] @ list(y.values()) <= a[i] for i in range(Lrows)), name="LeaderHPR")
     model.addConstrs((C[i] @ list(x.values()) + D[i] @ list(y.values()) <= b[i] for i in range(Frows)), name="FollowerHPR")

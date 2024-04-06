@@ -12,18 +12,13 @@ import constants
 from .formulations.DD_formulation import get_model
 from .formulations.DD_formulation_compressed_leader import get_model as get_model_with_compressed_leader
 
+from .python_callback import Callback, CallbackData
+
 from .utils.solve_HPR import solve as solve_HPR
 from .utils.solve_follower_problem import solve as solve_follower_problem
 from .utils.solve_aux_problem import solve as solve_aux_problem
 from .utils.sampler import Sampler
 
-
-class CallbackData:
-    def __init__(self, instance):
-        self.instance = instance
-        self.root_node_bound = None
-        self.was_root_node_visited = False
-        self.lazy_cuts = True
 
 class AlgorithmsManager:
     def __init__(self):
@@ -57,7 +52,8 @@ class AlgorithmsManager:
         # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
             result, model, _ = self.run_DD_reformulation_with_compressed_leader(
-                instance, diagram, time_limit=solver_time_limit - sampling_runtime
+                instance, diagram, time_limit=solver_time_limit - sampling_runtime,
+                use_lazy_cuts=constants.USE_LAZY_CUTS
             )
         else:
             result, model, _ = self.run_DD_reformulation(
@@ -127,7 +123,7 @@ class AlgorithmsManager:
         # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
             result, model, vars = self.run_DD_reformulation_with_compressed_leader(
-                instance, diagram, time_limit=solver_time_limit
+                instance, diagram, time_limit=solver_time_limit, use_lazy_cuts=constants.USE_LAZY_CUTS
             )
 
         self.logger.warning("New bounds -> LB: {lower_bound} - UB: {upper_bound}".format(**result))
@@ -272,16 +268,17 @@ class AlgorithmsManager:
 
         return results, model, vars
 
-    def run_DD_reformulation_with_compressed_leader(self, instance, diagram, time_limit, incumbent=dict()):
+    def run_DD_reformulation_with_compressed_leader(self, instance, diagram, time_limit, use_lazy_cuts, incumbent=dict()):
         # Callback function
         self.callback_data = CallbackData(instance)
-        callback_func = lambda model, where: self.callback(model, where, self.callback_data)
+        self.callback_data.use_lazy_cuts = use_lazy_cuts
+        self.callback_func = partial(Callback().callback, cbdata=self.callback_data)
 
         # Solve DD reformulation
         self.logger.info("Solving DD refomulation -> Time limit: {} s".format(time_limit))
         model, vars, model_building_runtime = get_model_with_compressed_leader(instance, diagram, time_limit, incumbent)
         model.Params.LazyConstraints = 1
-        model.optimize(callback_func)
+        model.optimize(self.callback_func)
         self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.runtime))
 
         results = self.get_results(instance, diagram, model, vars, model_building_runtime)
@@ -290,23 +287,7 @@ class AlgorithmsManager:
         if not feas:
             raise ValueError("Solution is infeasible -> {}".format(msg))
 
-        return results, model, vars
-    
-    def callback(self, model, where, cbdata):
-        if where == gp.GRB.Callback.MIPNODE:
-            if not cbdata.was_root_node_visited:
-                cbdata.root_node_bound = model.cbGet(gp.GRB.Callback.MIPNODE_OBJBND)
-                cbdata.was_root_node_visited = True
-        
-        # elif where == gp.GRB.Callback.MIPSOL and cbdata.lazy_cuts:
-        #     # Retrieve solution
-        #     x = model._vars["x"]
-        #     y = model._vars["y"]
-        #     x_sol = list(model.cbGetSolution(x).values())
-        #     follower_value = solve_follower_problem(cbdata.instance, x_sol)[0]
-        #     follower_response = solve_aux_problem(cbdata.instance, x_sol, follower_value)[1]
-
-        #     # Add cut    
+        return results, model, vars  
 
     def get_results(self, instance, diagram, model, vars, model_building_runtime):
         try:
@@ -318,7 +299,7 @@ class AlgorithmsManager:
             "compilation_method": diagram.compilation_method,
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
-            "lower_bound": model.ObjVal if model.MIPGap < 1e3 else model.ObjBound,
+            "lower_bound": model.ObjVal if model.MIPGap < 1e-3 else model.ObjBound,
             "best_obj_val": objval,
             "mip_gap": model.MIPGap,
             "upper_bound": float("inf"),
