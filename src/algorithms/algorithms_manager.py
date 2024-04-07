@@ -9,10 +9,12 @@ from decision_diagram_manager.decision_diagram_manager import DecisionDiagramMan
 
 import constants
 
-from .formulations.DD_formulation import get_model
-from .formulations.DD_formulation_compressed_leader import get_model as get_model_with_compressed_leader
+from .formulations.gurobi.DD_formulation_compressed_leader import get_model as get_gurobi_model_with_compressed_leader
+from .formulations.cplex.DD_formulation_compressed_leader import get_model as get_cplex_model_with_compressed_leader
 
-from .python_callback import Callback, CallbackData
+from .gurobi_callback import Callback as GurobiCallback
+from .gurobi_callback import CallbackData as GurobiCallbackData
+from .cplex_callback import CplexCallback
 
 from .utils.solve_HPR import solve as solve_HPR
 from .utils.solve_follower_problem import solve as solve_follower_problem
@@ -78,11 +80,15 @@ class AlgorithmsManager:
         result["iters"] = 0
 
         # Compute continuous relaxation bound
-        relaxed_model = model.relax()
-        relaxed_model.Params.OutputFlag = 0
-        relaxed_model.optimize()
-        result["root_node_bound"] = self.callback_data.root_node_bound
-        result["relaxation_obj_val"] = relaxed_model.objval
+        try:
+            relaxed_model = model.relax()
+            relaxed_model.Params.OutputFlag = 0
+            relaxed_model.optimize()
+            result["root_node_bound"] = self.callback_data.root_node_bound
+            result["relaxation_obj_val"] = relaxed_model.objval
+        except:
+            result["root_node_bound"] = "TODO"
+            result["relaxation_obj_val"] = "TODO"
 
         self.logger.info(
             "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width}".format(**result)
@@ -269,27 +275,48 @@ class AlgorithmsManager:
         return results, model, vars
 
     def run_DD_reformulation_with_compressed_leader(self, instance, diagram, time_limit, use_lazy_cuts, incumbent=dict()):
-        # Callback function
-        self.callback_data = CallbackData(instance)
-        self.callback_data.use_lazy_cuts = use_lazy_cuts
-        self.callback_func = partial(Callback().callback, cbdata=self.callback_data)
-
         # Solve DD reformulation
         self.logger.info("Solving DD refomulation -> Time limit: {} s".format(time_limit))
-        model, vars, model_building_runtime = get_model_with_compressed_leader(instance, diagram, time_limit, incumbent)
+        
+        # Gurobi
+        model, vars, model_building_runtime = get_gurobi_model_with_compressed_leader(instance, diagram, time_limit)
+        self.callback_data = GurobiCallbackData(instance)
+        self.callback_data.use_lazy_cuts = use_lazy_cuts
+        self.callback_func = partial(GurobiCallback().callback, cbdata=self.callback_data)
         model.Params.LazyConstraints = 1
-        model.optimize(self.callback_func)
+        while True:
+            model.optimize(lambda model, where: self.callback_func(model, where))
+            results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
+            if results["bilevel_gap"] < 1e-3:
+                break
+            # Create IC
+            
+
         self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.runtime))
+        results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
+        results["num_cuts"] = self.callback_data.num_cuts
 
-        results = self.get_results(instance, diagram, model, vars, model_building_runtime)
-
+        # # Cplex
+        # import cplex
+        # model, vars, model_building_runtime = get_cplex_model_with_compressed_leader(instance, diagram, time_limit, incumbent)
+        # # callback = model.register_callback(CplexCallback)
+        # contextmask = 0
+        # contextmask |= cplex.callbacks.Context.id.candidate
+        # callback = CplexCallback(instance, model, vars)
+        # model.cplex.set_callback(callback, contextmask)
+        # model.solve()
+        # self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.solve_details.time))
+        # results = self.get_cplex_results(instance, diagram, model, vars, model_building_runtime)
+        # results["num_cuts"] = callback.num_cuts
+        
+        # Sanity check
         feas, msg = self.check_solution_feasibility(instance, results["vars"])
         if not feas:
             raise ValueError("Solution is infeasible -> {}".format(msg))
 
         return results, model, vars  
 
-    def get_results(self, instance, diagram, model, vars, model_building_runtime):
+    def get_gurobi_results(self, instance, diagram, model, vars, model_building_runtime):
         try:
             objval = model.objVal
         except:
@@ -327,26 +354,76 @@ class AlgorithmsManager:
             }
         except:
             vars = dict()
+        results["vars"] = vars
 
         # Compute upper bound
-        follower_value = solve_follower_problem(instance, vars["x"])[0]
-        follower_response = solve_aux_problem(instance, vars["x"], follower_value)[1]
-        if instance.d @ vars["y"] <= instance.d @ follower_response:
-            # Current solution is bilevel optimal
-            results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ vars["y"]
-        else:
-             # Current solution allows to compute an upper bound
-            if instance.Lrows:
-                if np.all([instance.A @ vars["x"] + instance.B @ follower_response <= instance.a]):
-                    results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
-            else:
-                results["upper_bound"] = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
-        
-        results["vars"] = vars
-        results["opt_y"] = follower_response
+        results["upper_bound"], results["follower_response"] = self.get_upper_bound(instance, vars)
 
         return results
     
+    def get_cplex_results(self, instance, diagram, model, vars, model_building_runtime):
+        try:
+            objval = model.objective_value
+        except:
+            objval = None
+        results = {
+            "approach": None,
+            "compilation_method": diagram.compilation_method,
+            "max_width": diagram.max_width,
+            "ordering_heuristic": diagram.ordering_heuristic,
+            "lower_bound": model.objective_value if model.solve_details.gap < 1e-3 else model.solve_details.best_bound,
+            "best_obj_val": objval,
+            "mip_gap": model.solve_details.gap,
+            "upper_bound": float("inf"),
+            "bilevel_gap": None,
+            "total_runtime": None,
+            "data_load_runtime": round(instance.load_runtime),
+            "compilation_runtime": round(diagram.compilation_runtime),
+            "reduce_algorithm_runtime": round(diagram.reduce_algorithm_runtime),
+            "model_build_runtime": round(model_building_runtime),
+            "model_runtime": round(model.solve_details.time),
+            "num_vars": model.solve_details.columns,
+            "num_constrs": "TODO",
+            "num_nodes": diagram.node_count,
+            "num_arcs": diagram.arc_count,
+            "num_node_merges": diagram.num_merges
+        }
+        results["instance"] = instance.name
+        results["width"] = diagram.width
+        results["initial_width"] = diagram.initial_width
+        try:
+            vars = {
+                "x": [int(i.solution_value + 0.5) for i in vars["x"].values()],
+                "y": [int(i.solution_value + 0.5) for i in vars["y"].values()],
+                "w": [key for key, value in vars["w"].items() if value.solution_value > 0],
+            }
+        except:
+            vars = dict()
+        results["vars"] = vars
+
+        # Compute upper bound
+        results["upper_bound"], results["follower_response"] = self.get_upper_bound(instance, vars)
+
+        return results
+
+    def get_upper_bound(self, instance, vars):
+        # Compute upper bound
+        follower_value = solve_follower_problem(instance, vars["x"])[0]
+        follower_response = solve_aux_problem(instance, vars["x"], follower_value)[1]
+        UB = float("inf")
+        if instance.d @ vars["y"] <= instance.d @ follower_response:
+            # Current solution is bilevel optimal
+            UB = instance.c_leader @ vars["x"] + instance.c_follower @ vars["y"]
+        else:
+            # Current solution allows to compute an upper bound
+            if instance.Lrows:
+                if np.all([instance.A @ vars["x"] + instance.B @ follower_response <= instance.a]):
+                    UB = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
+            else:
+                UB = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
+
+        return UB, follower_response
+
     def check_solution_feasibility(self, instance, solution):
         tol = 1e-6
         if instance.A and not np.all(instance.A @ solution["x"] + instance.B @ solution["y"] <= instance.a + tol):

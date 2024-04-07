@@ -5,14 +5,17 @@ LOG_LEVEL = "DEBUG"
 # Compilation
 COMPILATION_METHOD = ["follower_then_compressed_leader"]
 APPROACH = ["one_time_compilation"]  # ["one_time_compilation", "iterative"]
-MAX_WIDTH = [25]
+MAX_WIDTH = [0]
 ORDERING_HEURISTIC = ["follower_cost"]  # ["lhs_coeffs", "leader_cost", "follower_cost", "leader_feasibility", "max_connected_degree"]
-DISCARD_METHOD = ["maxmin_slack"]  #["follower_cost", "minmax_state", "random"]
+DISCARD_METHOD = ["follower_cost"]  #["follower_cost", "minmax_state", "random"]
 SAMPLING_LENGTH = 0
-SAMPLING_METHOD = "pooling"
+SAMPLING_METHOD = "partitioning"
 
 # Solver
-SOLVER_TIME_LIMIT = 600
+SOLVER_TIME_LIMIT = 300
+USE_LAZY_CUTS = True
+CUT_TYPES = ["no_good_cuts", "informed_no_good_cuts"]
+BILEVEL_FREE_SET_SEP_TYPE = "SEP-1"
 
 # Instances
 INSTANCES = [
@@ -26,14 +29,14 @@ INSTANCES = [
     # "miplib/enigma50",
     # "miplib/enigma90",
     # "miplib/lseu10",
-    "miplib/lseu50",
+    # "miplib/lseu50",
     # "miplib/lseu90",
     # "miplib/p003310",
     # "miplib/p003350",
     # "miplib/p003390",
     # "miplib/p020110",
     # "miplib/p020150",
-    # "miplib/p020190",
+    "miplib/p020190",
     # "miplib/p028210",
     # "miplib/p028250",
     # "miplib/p028290",
@@ -42,7 +45,7 @@ INSTANCES = [
     # "miplib/p054890",
     # "miplib/p275610",
     # "miplib/p275650",
-    # # "miplib/p275690",
+    # "miplib/p275690",
     # "miplib/l152lav10",
     # "miplib/l152lav50",
     # "miplib/l152lav90",

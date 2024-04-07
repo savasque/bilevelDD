@@ -4,7 +4,7 @@ import numpy as np
 
 from algorithms.utils.solve_HPR import solve as solve_HPR
 
-def get_model(instance, diagram, time_limit, incumbent):
+def get_model(instance, diagram, time_limit, incumbent=None):
     Lcols = instance.Lcols
     Lrows = instance.Lrows
     Fcols = instance.Fcols

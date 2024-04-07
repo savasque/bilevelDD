@@ -47,7 +47,7 @@ def run(args):
 
                             # Remove solutions
                             del result["vars"]
-                            del result["opt_y"]
+                            del result["follower_response"]
 
                             # Write results
                             file_name = parser.write_results(result, file_name)

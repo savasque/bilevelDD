@@ -22,12 +22,12 @@ class Operations:
         self.logger.info("Executing reduce algorithm")
 
         # Populate nodes by layers (vlist)
-        v_list = {layer: list() for layer in range(diagram.nodes["sink"].layer + 1)}
-        for node in diagram.nodes.values():
+        v_list = {layer: list() for layer in range(diagram.sink_node.layer + 1)}
+        for node in diagram.nodes:
             v_list[node.layer].append(node)
 
         # Traverse diagram bottom-up
-        for layer in range(diagram.nodes["sink"].layer + 1)[::-1]:
+        for layer in range(diagram.sink_node.layer + 1)[::-1]:
             # if diagram.compilation_method == "follower_then_compressed_leader" and layer == diagram.nodes["sink"].layer - 1:
             #     continue
             # Create keys for each node in current layer
@@ -56,13 +56,13 @@ class Operations:
                 else:
                     # Node can be merged. Take each incoming arc and redirect their heads
                     for in_arc in u.incoming_arcs:
-                        in_arc.head = old_node.id
-                        in_arc._update_id()
+                        in_arc.head = int(old_node.id)
                         old_node.incoming_arcs.append(in_arc)
-                    diagram.remove_node(u)
-            if layer == diagram.nodes["sink"].layer - 1:
+                    u.incoming_arcs = list()
+                    u.outgoing_arcs = list()
+            if layer == diagram.sink_node.layer - 1:
                 # Special treatment for sink node
-                diagram.nodes["sink"].incoming_arcs = [arc for arc in diagram.nodes["sink"].incoming_arcs if arc.tail in [old_node.id, "root"]]
+                diagram.sink_node.incoming_arcs = [arc for arc in diagram.sink_node.incoming_arcs if arc.tail in [old_node.id, "root"]]
         
         # Filter arcs
         diagram.arcs = [arc for arc in diagram.arcs if arc.tail in diagram.nodes and arc.head in diagram.nodes]
@@ -244,16 +244,14 @@ class Operations:
     def reduce_queue(self, instance, discard_method, queue, max_width, player):
         if player == "follower":
             if discard_method == "follower_cost":
-                # idx_list = np.argsort(np.array([int(0.9 * x.follower_cost + 0.1 * x.leader_cost) for x in queue]))
-                # sorted_queue = deque([queue[i] for i in idx_list])
                 sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
             elif discard_method == "minmax_state":
-                sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state), sum(x.state), x.follower_cost)))
+                sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state - instance.b), sum(x.state), x.follower_cost)))
             elif discard_method == "random":
                 sorted_queue = queue
                 shuffle(sorted_queue)
-            elif discard_method == "incoming_degree":
-                sorted_queue = deque(sorted(queue, key=lambda x: len(x.incoming_arcs), reverse=True))
+            elif discard_method == "minsum_state":
+                sorted_queue = deque(sorted(queue, key=lambda x: sum(x.state), reverse=True))
         else:
             sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
 

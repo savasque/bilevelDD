@@ -47,7 +47,7 @@ class Callback:
                     cbdata.num_cuts += 1
 
                 # Informed no-good cut
-                if "informed_no_good_cuts" in CUT_TYPES:
+                if "informed_no_good_cuts" in cbdata.cut_types:
                     G, g = self.build_bilevel_free_set_S(instance, x_sol, y_sol, follower_response)
                     vars_values = x_sol + y_sol
                     vars = list(x.values()) + list(y.values())

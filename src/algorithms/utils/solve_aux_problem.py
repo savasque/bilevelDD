@@ -15,4 +15,4 @@ def solve(instance, x, objval):
 
     model.optimize()
 
-    return model.objVal, [y[i].X for i in y]
+    return model.ObjVal, [y[i].X for i in y]
