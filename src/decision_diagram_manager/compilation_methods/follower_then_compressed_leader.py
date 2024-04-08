@@ -3,12 +3,15 @@ from collections import deque
 import numpy as np
 
 from . import constants
+from constants import SAMPLING_LENGTH, SAMPLING_METHOD
 
 from classes.node import Node
 from classes.arc import Arc
+
 from decision_diagram_manager.operations import Operations
 
 from algorithms.utils.solve_follower_problem import solve as solve_follower_problem
+from algorithms.utils.sampler import Sampler
 
 
 class FollowerThenCompressedLeaderCompiler:
@@ -16,7 +19,7 @@ class FollowerThenCompressedLeaderCompiler:
         self.logger = logger
         self.operations = Operations(logger)
 
-    def compile(self, diagram, instance, max_width, ordering_heuristic, discard_method, Y, skip_brute_force_compilation):
+    def compile(self, diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation):
         """
             This method compiles a DD, starting with the follower and continuing with a single compressed leader layer.
             
@@ -44,7 +47,7 @@ class FollowerThenCompressedLeaderCompiler:
 
         # Create dummy long arc
         self.logger.debug("Solving follower problem to build dummy arc")
-        M = 1e6 #solve_follower_problem(instance, sense="maximize")[0]
+        M = solve_follower_problem(instance, sense="maximize")[0]
         self.logger.debug("Big-M value: {}".format(M))
         dummy_arc = Arc(tail=root_node, head=sink_node, value=0, cost=M, var_index=-1, player=None)
         diagram.add_arc(dummy_arc)
@@ -54,7 +57,15 @@ class FollowerThenCompressedLeaderCompiler:
             self.brute_force_compilation(instance, diagram, var_order, max_width, discard_method)
 
         ## Sampled solutions compilation
-        if Y:
+        if diagram.width < .5 * max_width:
+            # Build set Y
+            sampling_runtime = 0
+            if SAMPLING_LENGTH:
+                Y, sampling_runtime = self.sample_follower_solutions(instance)
+                Y = [HPR_optimal_solution["y"]] + Y
+            else:
+                Y = [HPR_optimal_solution["y"]]
+            diagram.sampling_runtime = sampling_runtime
             self.sampled_solutions_compilation(instance, diagram, var_order, max_width, Y)
 
         # ## Single solution-based compilation (last resort)
@@ -74,6 +85,13 @@ class FollowerThenCompressedLeaderCompiler:
         ))
 
         return diagram
+    
+    def sample_follower_solutions(self, instance):
+        sampler = Sampler(self.logger, sampling_method=SAMPLING_METHOD)
+        # Collect y's
+        Y, sampling_runtime = sampler.sample(instance, SAMPLING_LENGTH)
+
+        return Y, sampling_runtime
     
     def brute_force_compilation(self, instance, diagram, var_order, max_width, discard_method):
         ##### Compile y-solutions by binary branching

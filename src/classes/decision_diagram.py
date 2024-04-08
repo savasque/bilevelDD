@@ -10,6 +10,7 @@ class DecisionDiagram:
         self.var_order = None  # {position (int): Node}
         self.compilation_runtime = 0  # Total time for retrieving the final DD
         self.reduce_algorithm_runtime = 0  # Time elapsed during the reduction algorithm by Bryant (1986)
+        self.sampling_runtime = 0  # Time elapsed during sampling method
         self.initial_width = 0  # DD width before executing the reduction algorithm
         self.root_node = None
         self.sink_node = None

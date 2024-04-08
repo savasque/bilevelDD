@@ -28,11 +28,10 @@ def get_model(instance, diagram, time_limit, incumbent=None):
 
     t0 = time()
     model = gp.Model()
-    model.Params.TimeLimit = time_limit
     # model.Params.IntegralityFocus = 1
 
-    x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")
+    x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
     w = model.addVars([arc.id for arc in arcs], ub=1, name="w")
     pi = model.addVars([node.id for node in nodes], lb=-gp.GRB.INFINITY, name="pi")
     gamma = model.addVars([arc.id for arc in arcs if arc.player == "leader"], name="gamma")

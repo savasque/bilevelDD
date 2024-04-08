@@ -24,8 +24,8 @@ class DecisionDiagramManager:
             "iterative": self.compile_diagram_iteratively
         }
 
-    def compile_diagram(self, diagram, instance, compilation_method, max_width, ordering_heuristic, discard_method, Y=list(), skip_brute_force_compilation=False):
-        diagram = self.compilation_methods[compilation_method](diagram, instance, max_width, ordering_heuristic, discard_method, Y, skip_brute_force_compilation)
+    def compile_diagram(self, diagram, instance, compilation_method, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation=False):
+        diagram = self.compilation_methods[compilation_method](diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation)
         
         return diagram
 
@@ -347,8 +347,8 @@ class DecisionDiagramManager:
 
         return clean_diagram
 
-    def compile_diagram_follower_then_compressed_leader(self, diagram, instance, max_width, ordering_heuristic, discard_method, Y, skip_brute_force_compilation):
+    def compile_diagram_follower_then_compressed_leader(self, diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation):
         compiler = FollowerThenCompressedLeaderCompiler(self.logger)
-        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, discard_method, Y, skip_brute_force_compilation)
+        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation)
         
         return compiled_diagram

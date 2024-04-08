@@ -2,9 +2,9 @@ import logzero
 from time import time
 import numpy as np
 from functools import partial
-import gurobipy as gp
 
 from classes.decision_diagram import DecisionDiagram
+
 from decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
 
 import constants
@@ -16,6 +16,7 @@ from .gurobi_callback import Callback as GurobiCallback
 from .gurobi_callback import CallbackData as GurobiCallbackData
 from .cplex_callback import CplexCallback
 
+from utils.utils import write_modified_model_mps_file, copy_aux_file
 from .utils.solve_HPR import solve as solve_HPR
 from .utils.solve_follower_problem import solve as solve_follower_problem
 from .utils.solve_aux_problem import solve as solve_aux_problem
@@ -25,8 +26,6 @@ from .utils.sampler import Sampler
 class AlgorithmsManager:
     def __init__(self):
         self.logger = logzero.logger
-        self.callback_data = None
-        self.callback_func = None
     
     def one_time_compilation_approach(self, instance, compilation_method, max_width, ordering_heuristic, discard_method, solver_time_limit):
         diagram = DecisionDiagram(0)
@@ -37,29 +36,21 @@ class AlgorithmsManager:
         HPR_value, HPR_optimal_solution, UB, _ = self.get_HPR_bounds(instance)
         self.logger.info("Updated bounds -> LB: {} - UB: {}".format(HPR_value, UB))
 
-        # Build set Y
-        if constants.SAMPLING_LENGTH:
-            Y, sampling_runtime = self.sample_follower_solutions(instance)
-            Y = [HPR_optimal_solution["y"]] + Y
-        else:
-            Y = [HPR_optimal_solution["y"]]
-            sampling_runtime = 0
-
         # Compile diagram
         diagram = diagram_manager.compile_diagram(
             diagram, instance, compilation_method, max_width, 
-            ordering_heuristic, discard_method, Y
+            ordering_heuristic, discard_method, HPR_optimal_solution
         )
 
         # Solve reformulation
         if compilation_method == "follower_then_compressed_leader":
             result, model, _ = self.run_DD_reformulation_with_compressed_leader(
-                instance, diagram, time_limit=solver_time_limit - sampling_runtime,
+                instance, diagram, time_limit=max(solver_time_limit - (time() - t0), 0),
                 use_lazy_cuts=constants.USE_LAZY_CUTS
             )
         else:
             result, model, _ = self.run_DD_reformulation(
-                instance, diagram, time_limit=solver_time_limit - sampling_runtime
+                instance, diagram, time_limit=max(solver_time_limit - (time() - t0), 0)
             )
 
         total_runtime = time() - t0
@@ -68,9 +59,7 @@ class AlgorithmsManager:
         result["approach"] = "one_time_compilation"
         result["discard_method"] = discard_method
         result["HPR"] = HPR_value
-        result["sampling"] = True if len(Y) >= 2 else False
-        result["Y_length"] = len(Y)
-        result["sampling_runtime"] = sampling_runtime
+        result["sampling_set_length"] = constants.SAMPLING_LENGTH
         result["total_runtime"] = round(total_runtime)
         result["time_limit"] = solver_time_limit
         result["num_nodes"] = diagram.node_count + 2
@@ -213,13 +202,6 @@ class AlgorithmsManager:
 
         return HPR_value, HPR_optimal_response, UB, time() - t0
     
-    def sample_follower_solutions(self, instance):
-        sampler = Sampler(self.logger, sampling_method=constants.SAMPLING_METHOD)
-        # Collect y's
-        Y, sampling_runtime = sampler.sample(instance, constants.SAMPLING_LENGTH)
-
-        return Y, sampling_runtime
-    
     def add_DD_cuts(self, instance, diagram, model, vars):
         import gurobipy as gp
 
@@ -275,26 +257,25 @@ class AlgorithmsManager:
         return results, model, vars
 
     def run_DD_reformulation_with_compressed_leader(self, instance, diagram, time_limit, use_lazy_cuts, incumbent=dict()):
-        # Solve DD reformulation
-        self.logger.info("Solving DD refomulation -> Time limit: {} s".format(time_limit))
+        callback_data = GurobiCallbackData(instance)
+        callback_data.use_lazy_cuts = use_lazy_cuts
+        callback_func = partial(GurobiCallback().callback, cbdata=self.callback_data)
+        self.logger.info("Solving DD refomulation -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cut_types, callback_data.bilevel_free_set_sep_type))
         
         # Gurobi
         model, vars, model_building_runtime = get_gurobi_model_with_compressed_leader(instance, diagram, time_limit)
-        self.callback_data = GurobiCallbackData(instance)
-        self.callback_data.use_lazy_cuts = use_lazy_cuts
-        self.callback_func = partial(GurobiCallback().callback, cbdata=self.callback_data)
-        model.Params.LazyConstraints = 1
-        while True:
-            model.optimize(lambda model, where: self.callback_func(model, where))
-            results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
-            if results["bilevel_gap"] < 1e-3:
-                break
-            # Create IC
-            
 
+        # Write mod model aux file
+        write_modified_model_mps_file(model, instance, diagram)
+        copy_aux_file(instance, diagram)
+
+        model.Params.LazyConstraints = 1
+        model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
+        model.optimize(lambda model, where: callback_func(model, where))
+        results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
         self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.runtime))
         results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
-        results["num_cuts"] = self.callback_data.num_cuts
+        results["num_cuts"] = callback_data.num_cuts
 
         # # Cplex
         # import cplex
@@ -310,9 +291,10 @@ class AlgorithmsManager:
         # results["num_cuts"] = callback.num_cuts
         
         # Sanity check
-        feas, msg = self.check_solution_feasibility(instance, results["vars"])
-        if not feas:
-            raise ValueError("Solution is infeasible -> {}".format(msg))
+        if results["vars"]:
+            feas, msg = self.check_solution_feasibility(instance, results["vars"])
+            if not feas:
+                raise ValueError("Solution is infeasible -> {}".format(msg))
 
         return results, model, vars  
 
@@ -335,13 +317,15 @@ class AlgorithmsManager:
             "data_load_runtime": round(instance.load_runtime),
             "compilation_runtime": round(diagram.compilation_runtime),
             "reduce_algorithm_runtime": round(diagram.reduce_algorithm_runtime),
+            "sampling_runtime": round(diagram.sampling_runtime),
             "model_build_runtime": round(model_building_runtime),
             "model_runtime": round(model.runtime),
             "num_vars": model.numVars,
             "num_constrs": model.numConstrs,
             "num_nodes": diagram.node_count,
             "num_arcs": diagram.arc_count,
-            "num_node_merges": diagram.num_merges
+            "num_node_merges": diagram.num_merges,
+            "follower_response": None
         }
         results["instance"] = instance.name
         results["width"] = diagram.width
@@ -357,7 +341,8 @@ class AlgorithmsManager:
         results["vars"] = vars
 
         # Compute upper bound
-        results["upper_bound"], results["follower_response"] = self.get_upper_bound(instance, vars)
+        if vars:
+            results["upper_bound"], results["follower_response"] = self.get_upper_bound(instance, vars)
 
         return results
     
@@ -380,6 +365,7 @@ class AlgorithmsManager:
             "data_load_runtime": round(instance.load_runtime),
             "compilation_runtime": round(diagram.compilation_runtime),
             "reduce_algorithm_runtime": round(diagram.reduce_algorithm_runtime),
+            "sampling_runtime": round(diagram.sampling_runtime),
             "model_build_runtime": round(model_building_runtime),
             "model_runtime": round(model.solve_details.time),
             "num_vars": model.solve_details.columns,
