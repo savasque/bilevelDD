@@ -143,7 +143,7 @@ class Sampler:
                 #     a = None
 
                 Y[str(y_value)] = y_value
-                self.logger.debug("Sampled solutions: {} - Remaining queue size: {}".format(len(Y), len(queue)))
+                self.logger.debug("Sampled solutions: {}".format(len(Y)))
 
                 # for i in range(instance.Lrows):
                 #     new_model = gp.Model()

@@ -66,7 +66,6 @@ class AlgorithmsManager:
         result["num_arcs"] = diagram.arc_count
         result["upper_bound"] = min(result["upper_bound"], UB)
         result["bilevel_gap"] = round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-2), 3) if result["upper_bound"] < float("inf") else None
-        result["iters"] = 0
 
         # Compute continuous relaxation bound
         try:
@@ -259,23 +258,103 @@ class AlgorithmsManager:
     def run_DD_reformulation_with_compressed_leader(self, instance, diagram, time_limit, use_lazy_cuts, incumbent=dict()):
         callback_data = GurobiCallbackData(instance)
         callback_data.use_lazy_cuts = use_lazy_cuts
-        callback_func = partial(GurobiCallback().callback, cbdata=self.callback_data)
+        callback_func = partial(GurobiCallback().callback, cbdata=callback_data)
         self.logger.info("Solving DD refomulation -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cut_types, callback_data.bilevel_free_set_sep_type))
         
         # Gurobi
         model, vars, model_building_runtime = get_gurobi_model_with_compressed_leader(instance, diagram, time_limit)
 
-        # Write mod model aux file
-        write_modified_model_mps_file(model, instance, diagram)
-        copy_aux_file(instance, diagram)
+        # # Write mod model aux file
+        # write_modified_model_mps_file(model, instance, diagram)
+        # copy_aux_file(instance, diagram)
 
-        model.Params.LazyConstraints = 1
-        model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
-        model.optimize(lambda model, where: callback_func(model, where))
+        ############################################################## Some ideas ####################################################################
+        # Create disjunctions
+        import gurobipy as gp
+        UB = float("inf")
+        model.Params.OutputFlag = 0
+        cuts = 0
+        iter = 0
+        t0 = time()
+        while time() - t0 <= time_limit:
+            model.optimize()
+            x_sol = [i.X for i in vars["x"].values()]
+            y_sol = [i.X for i in vars["y"].values()]
+            follower_value = solve_follower_problem(instance, x_sol)[0]
+            follower_response = solve_aux_problem(instance, x_sol, follower_value)[1]
+            
+            LB = model.ObjVal
+            UB = min(UB, instance.c_leader @ x_sol + instance.c_follower @ follower_response)
+            print("Iter {} -> LB: {} - UB: {} - Time elapsed: {} s".format(iter + 1, LB, UB, round(time() - t0)))
+            if UB <= LB + 1e-3:
+                break
+            
+            G, g = self.build_bilevel_free_set_S(instance, x_sol, y_sol, follower_response=follower_response, sep="SEP-1")
+            z = model.addVars(G.shape[0], vtype=gp.GRB.BINARY)
+            M = {i: g[i] + sum(-min(val, 0) for val in G[i]) for i in range(G.shape[0])}
+            model.addConstrs(G[i] @ (vars["x"].values() + vars["y"].values()) >= g[i] - 1e6 * (1 - z[i]) for i in range(G.shape[0]))
+            model.addConstr(gp.quicksum(z[i] for i in range(G.shape[0])) >= 1)
+            cuts += 1 + G.shape[0]
+            
+            # G2, g2 = self.build_bilevel_free_set_S(instance, x_sol, y_sol, follower_response=follower_response, sep="SEP-3")
+            # z2 = model.addVars(G2.shape[0], vtype=gp.GRB.BINARY)
+            # M2 = {i: g2[i] + sum(-min(val, 0) for val in G2[i]) for i in range(G2.shape[0])}
+            # model.addConstrs(G2[i] @ (vars["x"].values() + vars["y"].values()) >= g2[i] - 1e6 * (1 - z2[i]) for i in range(G2.shape[0]))
+            # model.addConstr(gp.quicksum(z2[i] for i in range(G2.shape[0])) >= 1)
+            # cuts += 1
+            
+            model.addConstr(instance.c_leader @ list(vars["x"].values()) + instance.c_follower @ list(vars["y"].values()) >= LB)
+            model.update()
+            
+            iter += 1
+        
         results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
         self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.runtime))
         results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
-        results["num_cuts"] = callback_data.num_cuts
+        results["num_cuts"] = cuts
+        results["iters"] = iter
+
+        # # Generate IC cuts on LP relaxation
+        # import gurobipy as gp
+        # from .utils.get_HPR import get_model as get_HPR
+        # HPR_model = get_HPR(instance)
+        # HPR_model.update()
+        # relaxed_model = HPR_model.relax()
+        # cuts = None
+        # for _ in range(20):
+        #     relaxed_model.optimize()
+        #     print("Relaxed ObjVal: {}".format(relaxed_model.ObjVal))
+        #     B, basic_vars = self.extract_LP_basis(relaxed_model)
+        #     relaxed_vars = relaxed_model.getVars()
+        #     x_sol = [var.X for var in relaxed_vars if "x" in var.VarName]
+        #     y_sol = [var.X for var in relaxed_vars if "y" in var.VarName]
+        #     G, g = self.build_bilevel_free_set_S(instance, x_sol, y_sol, sep="SEP-2")
+        #     G_B = G[:, [var.index for var in basic_vars]]
+        #     G_B = np.hstack((G_B, np.zeros((G_B.shape[0], B.shape[1] - G_B.shape[1]))))
+        #     B_inv = np.linalg.inv(B)
+        #     u = G_B @ B_inv
+        #     A_hat = np.hstack((instance.C, instance.D))
+        #     if cuts != None:
+        #         A_hat = np.vstack((A_hat, cuts))
+        #     G_bar = G - u @ A_hat
+        #     g_bar = g - u @ instance.b
+        #     gamma = np.array([min(max(G_bar[i][j] / g_bar[i] for i in range(G.shape[0])), 1) for j in range(G.shape[1])])
+        #     relaxed_model.addConstr(gamma @ relaxed_vars >= 1)
+        #     if cuts != None:
+        #         cuts.hstack((cuts, gamma))
+        #     else:
+        #         cuts = gamma
+        #     relaxed_model.reset()
+
+        ########################################################################################################################################
+
+        # model.Params.LazyConstraints = 1
+        # model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
+        # model.optimize(lambda model, where: callback_func(model, where))
+        # results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
+        # self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.runtime))
+        # results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
+        # results["num_cuts"] = callback_data.num_cuts
 
         # # Cplex
         # import cplex
@@ -324,6 +403,8 @@ class AlgorithmsManager:
             "num_constrs": model.numConstrs,
             "num_nodes": diagram.node_count,
             "num_arcs": diagram.arc_count,
+            "iters": 0,
+            "num_cuts": 0,
             "num_node_merges": diagram.num_merges,
             "follower_response": None
         }
@@ -409,6 +490,122 @@ class AlgorithmsManager:
                 UB = instance.c_leader @ vars["x"] + instance.c_follower @ follower_response
 
         return UB, follower_response
+
+    def extract_LP_basis(self, model):
+        import scipy.sparse as ss
+
+        constr_names_to_indices = {
+            c.ConstrName: i for i, c in enumerate(model.getConstrs())
+        }
+        m = model.NumConstrs
+        col_index = 0
+        # Initialize the lists to store the row and column indices of non-zero 
+        # elements in the basis matrix
+        row_indices, col_indices, values, basic_vars = [], [], [], []
+        for v in model.getVars():
+            col = model.getCol(v)
+            
+            # Find basic variables
+            if v.VBasis == 0:
+                basic_vars.append(v)
+                for j in range(col.size()):
+                    coeff, name = col.getCoeff(j), col.getConstr(j).ConstrName
+                    row_index = constr_names_to_indices[name]
+                    row_indices.append(row_index)
+                    col_indices.append(col_index)
+                    values.append(coeff)
+                col_index +=1
+            
+        # Find constraints with slack variable in the basis
+        for c in model.getConstrs():
+            name = c.ConstrName
+            row_index = constr_names_to_indices[name]
+            
+            if c.CBasis == 0:
+                row_indices.append(row_index)
+                col_indices.append(col_index)
+                values.append(1)
+                col_index +=1
+
+        B = ss.csr_matrix((values, (row_indices, col_indices)), shape=(m, m)).A
+
+        return B, basic_vars
+
+    def build_bilevel_free_set_S(self, instance, x_sol, y_sol, follower_response=None, sep="SEP-1"):
+        import gurobipy as gp
+
+        # SEP-1
+        if sep == "SEP-1":
+            y_hat = follower_response
+
+            # Build set
+            selected_rows = [idx for idx, val in instance.interaction.items() if val == "both"]
+            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
+            G = np.hstack((G_x, G_y))
+            g_x = instance.b[selected_rows] + 1 - instance.D[selected_rows, :] @ y_hat
+            g_y = -instance.d @ y_hat
+            g = np.hstack((g_x, g_y))
+
+        # SEP-2
+        elif sep == "SEP-2":
+            sep_model = gp.Model()
+            sep_model.Params.OutputFlag = 0
+            selected_rows = [idx for idx, val in instance.interaction.items() if val == "both"]
+            y = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
+            w = sep_model.addVars(selected_rows, vtype=gp.GRB.BINARY)
+            s = sep_model.addVars(selected_rows, lb=-gp.GRB.INFINITY)
+            L_max = {i: sum(max(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in selected_rows}
+            L_star = {i: instance.C[i] @ x_sol for i in selected_rows}
+
+            sep_model.addConstr(instance.d @ list(y.values()) <= instance.d @ y_sol - 1)
+            sep_model.addConstrs(instance.D[i] @ list(y.values()) + s[i] == instance.b[i] for i in selected_rows)
+            sep_model.addConstrs(s[i] + (L_max[i] - L_star[i]) * w[i] >= L_max[i] for i in selected_rows)
+            sep_model.setObjective(gp.quicksum(w[i] for i in selected_rows), sense=gp.GRB.MINIMIZE)
+            sep_model.optimize()
+
+            y_hat = [i.X for i in y.values()]
+
+            # Build set
+            selected_rows = [i for i, val in w.items() if val.X > .5]
+            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
+            G = np.hstack((G_x, G_y))
+            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+            g_y = -instance.d @ y_hat
+            g = np.hstack((g_x, g_y))
+
+        # SEP-3
+        elif sep == "SEP-3":
+            sep_model = gp.Model()
+            sep_model.Params.OutputFlag = 0
+            selected_rows = [idx for idx, val in instance.interaction.items() if val == "both"]
+            delta = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
+            t = sep_model.addVars(selected_rows)
+
+            sep_model.addConstr(instance.d @ list(delta.values()) <= -1)
+            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= instance.b[i] - instance.C[i] @ x_sol - instance.D[i] @ y_sol for i in selected_rows)
+            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= t[i] for i in selected_rows)
+            sep_model.setObjective(gp.quicksum(t[i] for i in selected_rows), sense=gp.GRB.MINIMIZE)
+            sep_model.optimize()
+
+            delta_y = [i.X for i in delta.values()]
+
+            # Build set
+            G = np.hstack((instance.C, instance.D))[selected_rows, :]
+            g = (instance.b + 1 - instance.D @ delta_y)[selected_rows]
+            # for j in range(instance.Fcols):
+                # e = np.zeros(instance.Fcols)
+                # e[j] = -1
+                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+                # g = np.append(g, delta_y[j])
+
+                # e = np.zeros(instance.Fcols)
+                # e[j] = 1
+                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+                # g = np.append(g, 1 - delta_y[j])
+        
+        return G, g
 
     def check_solution_feasibility(self, instance, solution):
         tol = 1e-6

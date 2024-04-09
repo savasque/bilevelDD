@@ -57,7 +57,7 @@ class FollowerThenCompressedLeaderCompiler:
             self.brute_force_compilation(instance, diagram, var_order, max_width, discard_method)
 
         ## Sampled solutions compilation
-        if diagram.width < .5 * max_width:
+        if diagram.width == 1:
             # Build set Y
             sampling_runtime = 0
             if SAMPLING_LENGTH:

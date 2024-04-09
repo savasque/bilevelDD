@@ -14,7 +14,7 @@ SAMPLING_METHOD = "partitioning"
 # Solver
 SOLVER_TIME_LIMIT = 3600
 USE_LAZY_CUTS = False
-CUT_TYPES = ["no_good_cuts", "informed_no_good_cuts"]
+CUT_TYPES = ["informed_no_good_cuts"]
 BILEVEL_FREE_SET_SEP_TYPE = "SEP-1"
 
 # Instances

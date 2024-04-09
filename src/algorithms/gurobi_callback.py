@@ -70,6 +70,14 @@ class Callback:
         if BILEVEL_FREE_SET_SEP_TYPE == "SEP-1":
             y_hat = follower_response
 
+            # Build set
+            G_x = np.vstack((instance.C, np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((instance.Frows, instance.Fcols)), -instance.d))
+            G = np.hstack((G_x, G_y))
+            g_x = instance.b + 1 - instance.D @ y_hat
+            g_y = -instance.d @ y_hat
+            g = np.hstack((g_x, g_y))
+
         # SEP-2
         elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-2":
             sep_model = gp.Model()
@@ -88,12 +96,41 @@ class Callback:
 
             y_hat = [i.X for i in y.values()]
 
-        # Build set
-        G_x = np.vstack((instance.C, np.zeros(instance.Lcols)))
-        G_y = np.vstack((np.zeros((instance.Frows, instance.Fcols)), -instance.d))
-        G = np.hstack((G_x, G_y))
-        g_x = instance.b + 1 - instance.D @ y_hat
-        g_y = -instance.d @ y_hat
-        g = np.hstack((g_x, g_y))
+            # Build set
+            G_x = np.vstack((instance.C, np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((instance.Frows, instance.Fcols)), -instance.d))
+            G = np.hstack((G_x, G_y))
+            g_x = instance.b + 1 - instance.D @ y_hat
+            g_y = -instance.d @ y_hat
+            g = np.hstack((g_x, g_y))
+
+        # SEP-3
+        elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-3":
+            sep_model = gp.Model()
+            sep_model.Params.OutputFlag = 0
+            delta = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
+            t = sep_model.addVars(instance.Frows)
+
+            sep_model.addConstr(instance.d @ list(delta.values()) <= - 1)
+            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= instance.b[i] - instance.C[i] @ x_sol - instance.D[i] @ y_sol for i in range(instance.Frows))
+            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= t[i] for i in range(instance.Frows))
+            sep_model.setObjective(gp.quicksum(t[i] for i in range(instance.Frows)), sense=gp.GRB.MINIMIZE)
+            sep_model.optimize()
+
+            y_hat = [i.X for i in delta.values()]
+
+            # Build set
+            G = np.hstack((instance.C, instance.D))
+            g = instance.b + 1 - instance.D @ y_hat
+            for j in range(instance.Fcols):
+                e = np.zeros(instance.Fcols)
+                e[j] = -1
+                G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+                g = np.append(g, y_hat[j] + 1)
+
+                e = np.zeros(instance.Fcols)
+                e[j] = 1
+                G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+                g = np.append(g, 2 - y_hat[j])
         
         return G, g
