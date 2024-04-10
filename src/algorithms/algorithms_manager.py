@@ -292,7 +292,7 @@ class AlgorithmsManager:
             G, g = self.build_bilevel_free_set_S(instance, x_sol, y_sol, follower_response=follower_response, sep="SEP-1")
             z = model.addVars(G.shape[0], vtype=gp.GRB.BINARY)
             M = {i: g[i] + sum(-min(val, 0) for val in G[i]) for i in range(G.shape[0])}
-            model.addConstrs(G[i] @ (vars["x"].values() + vars["y"].values()) >= g[i] - 1e6 * (1 - z[i]) for i in range(G.shape[0]))
+            model.addConstrs(G[i] @ (vars["x"].values() + vars["y"].values()) >= g[i] - M[i] * (1 - z[i]) for i in range(G.shape[0]))
             model.addConstr(gp.quicksum(z[i] for i in range(G.shape[0])) >= 1)
             cuts += 1 + G.shape[0]
             
@@ -308,8 +308,9 @@ class AlgorithmsManager:
             
             iter += 1
         
+        model.optimize()
         results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
-        self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(model.runtime))
+        self.logger.info("DD reformulation succesfully solved -> Time elapsed: {} s".format(time() - t0))
         results = self.get_gurobi_results(instance, diagram, model, vars, model_building_runtime)
         results["num_cuts"] = cuts
         results["iters"] = iter
@@ -387,7 +388,7 @@ class AlgorithmsManager:
             "compilation_method": diagram.compilation_method,
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
-            "lower_bound": model.ObjVal if model.MIPGap < 1e-3 else model.ObjBound,
+            "lower_bound": model.ObjBound,
             "best_obj_val": objval,
             "mip_gap": model.MIPGap,
             "upper_bound": float("inf"),
@@ -437,7 +438,7 @@ class AlgorithmsManager:
             "compilation_method": diagram.compilation_method,
             "max_width": diagram.max_width,
             "ordering_heuristic": diagram.ordering_heuristic,
-            "lower_bound": model.objective_value if model.solve_details.gap < 1e-3 else model.solve_details.best_bound,
+            "lower_bound": model.solve_details.best_bound,
             "best_obj_val": objval,
             "mip_gap": model.solve_details.gap,
             "upper_bound": float("inf"),
