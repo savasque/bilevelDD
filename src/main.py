@@ -29,7 +29,7 @@ def run(args):
             )
 
             # Remove solutions
-            del result["vars"]
+            del result["solution"]
             del result["follower_response"]
 
             # Write results

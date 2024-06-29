@@ -16,7 +16,6 @@ from .gurobi_callback import Callback as GurobiCallback
 from .gurobi_callback import CallbackData as GurobiCallbackData
 # from .cplex_callback import CplexCallback
 
-from utils.utils import write_modified_model_mps_file, copy_aux_file
 from .utils.solve_HPR import solve as solve_HPR
 from .utils.solve_follower_problem import solve as solve_follower_problem
 from .utils.solve_aux_problem import solve as solve_aux_problem
