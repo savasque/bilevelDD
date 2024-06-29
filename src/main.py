@@ -15,7 +15,7 @@ def run(args):
     parser = Parser()
     algorithms_manager = AlgorithmsManager()
 
-    file_name = "{}|w{}|{}".format(args.instance_name.split("/")[1], args.max_width, args.approach)
+    file_name = "w{}|{}".format(args.max_width, args.approach)
 
     for discard_method in constants.DISCARD_METHOD:
         for ordering_heuristic in constants.ORDERING_HEURISTIC: 
