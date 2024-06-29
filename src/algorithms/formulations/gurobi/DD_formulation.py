@@ -1,14 +1,11 @@
+from time import time
 import gurobipy as gp
 import numpy as np
 
-from algorithms.utils.solve_HPR import solve as solve_HPR
-
-def get_model(instance, diagram, time_limit, incumbent):
+def get_model(instance, diagram, incumbent=None):
     Lcols = instance.Lcols
-    Lrows = instance.Lrows
     Fcols = instance.Fcols
     Frows = instance.Frows
-
     A = instance.A
     B = instance.B
     C = instance.C
@@ -19,21 +16,11 @@ def get_model(instance, diagram, time_limit, incumbent):
     c_follower = instance.c_follower
     d = instance.d
 
-    nodes = diagram.nodes
-    arcs = diagram.arcs
-    root_node = nodes["root"]
-    sink_node = nodes["sink"]
-
+    t0 = time()
     model = gp.Model()
-    model.Params.TimeLimit = time_limit
-    M = solve_HPR(instance, obj="follower", sense="max")[0]
 
-    x = model.addVars(Lcols, vtype=gp.GRB.BINARY, name="x")
-    y = model.addVars(Fcols, vtype=gp.GRB.BINARY, name="y")
-    w = model.addVars([arc.id for arc in arcs], ub=1, name="w")
-    pi = model.addVars([node.id for node in nodes.values()], lb=-gp.GRB.INFINITY, name="pi")
-    lamda = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 0], name="lambda")
-    beta = model.addVars([arc.id for arc in arcs if arc.player == "leader" and arc.value == 1], name="beta")
+    x = model.addMVar(Lcols, vtype=gp.GRB.BINARY, name="x")
+    y = model.addMVar(Fcols, vtype=gp.GRB.BINARY, name="y")
 
     if incumbent:
         for j in range(Lcols):
@@ -41,57 +28,69 @@ def get_model(instance, diagram, time_limit, incumbent):
         for j in range(Fcols):
             y[j].start = incumbent["y"][j]
 
-    vars = {
+    model._vars = {
         "x": x,
-        "y": y,
-        "w": w,
-        "pi": pi,
-        "lambda": lamda,
-        "beta": beta
+        "y": y
     }
 
     # HPR constrs
-    model.addConstrs((gp.quicksum(A[i][j] * x[j] for j in range(Lcols)) + gp.quicksum(B[i][j] * y[j] for j in range(Fcols)) <= a[i] for i in range(Lrows)), name="LeaderHPR")
-    model.addConstrs((gp.quicksum(C[i][j] * x[j] for j in range(Lcols)) + gp.quicksum(D[i][j] * y[j] for j in range(Fcols)) <= b[i] for i in range(Frows)), name="FollowerHPR")
-
-    # Value-function constr
-    model.addConstr(gp.quicksum(d[j] * y[j] for j in range(Fcols)) <= gp.quicksum(arc.cost * w[arc.id] for arc in arcs), name="ValueFunction")
-
-    # Flow constrs
-    model.addConstr(gp.quicksum(w[arc.id] for arc in root_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in root_node.incoming_arcs) == 1, name="FlowRoot")
-    model.addConstr(gp.quicksum(w[arc.id] for arc in sink_node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in sink_node.incoming_arcs) == -1, name="FlowSink")
-    model.addConstrs(gp.quicksum(w[arc.id] for arc in node.outgoing_arcs) - gp.quicksum(w[arc.id] for arc in node.incoming_arcs) == 0 for node in nodes.values() if node.id not in ["root", "sink"])
-
-    # Arc capacity constrs
-    model.addConstrs((w[arc.id] <= x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 1), name="ArcCap1")
-    model.addConstrs((w[arc.id] <= 1 - x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="ArcCap0")
-
-    # Dual feasibility
-    model.addConstrs((pi[arc.tail] - pi[arc.head] <= arc.cost for arc in arcs if arc.player in ["follower", None]), name="DualFeasFollower")
-    model.addConstrs((pi[arc.tail] - pi[arc.head] - lamda[arc.id] <= 0 for arc in arcs if arc.player == "leader" and arc.value == 0), name="DualFeasLeader0")
-    model.addConstrs((pi[arc.tail] - pi[arc.head] - beta[arc.id] <= 0 for arc in arcs if arc.player == "leader" and arc.value == 1), name="DualFeasLeader1")
-
-    # Strong duality
-    model.addConstr(pi[root_node.id] == gp.quicksum(arc.cost * w[arc.id] for arc in arcs), name="StrongDualRoot")
-    model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
-    
-    # Primal-dual linearization
-    model.addConstrs((lamda[arc.id] <= (M - nodes[arc.tail].follower_cost) * x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="StrongDual0")
-    model.addConstrs((beta[arc.id] <= (M - nodes[arc.tail].follower_cost) * (1 - x[arc.var_index]) for arc in arcs if arc.player == "leader" and arc.value == 1), name="StrongDual1")
-
-    # M -= solve_HPR(instance, obj="follower", sense="min")[0]
-    # model.addConstrs((lamda[arc.id] <= M * x[arc.var_index] for arc in arcs if arc.player == "leader" and arc.value == 0), name="Linearization0")
-    # model.addConstrs((beta[arc.id] <= M * (1 - x[arc.var_index]) for arc in arcs if arc.player == "leader" and arc.value == 1), name="Linearization1")
-
-    # Strengthening (Fischetti et al, 2017)
-    for j in range(Fcols):
-        if np.all([D[i][j] <= 0 for i in range(Frows)]) and d[j] < 0:
-            model.addConstr(y[j] == 1)
-        elif np.all([D[i][j] >= 0 for i in range(Frows)]) and d[j] > 0:
-            model.addConstr(y[j] == 0)
+    if A.shape[0] != 0 and B.shape[0] != 0:
+        model.addConstr((A @ x + B @ y <= a), name="LeaderHPR")
+    elif A.shape[0] != 0:
+        model.addConstr((A @ x <= a), name="LeaderHPR")
+    elif B.shape[0] != 0:
+        model.addConstr((B @ y <= a), name="LeaderHPR")
+    model.addConstr((C @ x + D @ y <= b), name="FollowerHPR")
 
     # Objective function
-    obj = gp.quicksum(c_leader[j] * x[j] for j in range(Lcols)) + gp.quicksum(c_follower[j] * y[j] for j in range(Fcols))
+    obj = c_leader @ x + c_follower @ y
     model.setObjective(obj, sense=gp.GRB.MINIMIZE)
 
-    return model, vars
+    if diagram:
+        nodes = diagram.nodes
+        arcs = diagram.arcs
+        root_node = diagram.root_node
+        sink_node = diagram.sink_node
+        interaction_rows = [i for i in range(instance.Frows) if instance.interaction[i] == "both"]
+
+        pi = model.addVars([node.id for node in nodes], lb=-gp.GRB.INFINITY, name="pi")
+        lamda = model.addVars([arc.id for arc in arcs if arc.player == "leader"], name="lambda")
+        gamma = model.addVars([arc.id for arc in arcs if arc.player == "leader"], name="gamma")
+        alpha = model.addVars([arc.id for arc in arcs if arc.player == "leader"], vtype=gp.GRB.BINARY, name="alpha")
+        beta = model.addVars([arc.id for arc in arcs if arc.player == "leader"], interaction_rows, vtype=gp.GRB.BINARY, name="beta")
+
+        model._vars.update(
+            {
+                "pi": pi,
+                "lambda": lamda,
+                "gamma": gamma,
+                "alpha": alpha,
+                "beta": beta
+            }
+        )
+
+        # Value-function constr
+        model.addConstr(d @ y <= pi[root_node.id], name="ValueFunction")
+
+        # Dual feasibility
+        model.addConstrs((pi[arc.tail.id] - pi[arc.head.id] <= arc.cost for arc in arcs if arc.player in ["follower", "dummy"]), name="DualFeas0")
+        model.addConstrs((pi[arc.tail.id] - pi[arc.head.id] - lamda[arc.id] <= arc.cost for arc in arcs if arc.player == "leader"), name="DualFeas1")
+        
+        # Strong duality
+        model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
+
+        # Gamma bounds
+        M = 1e6
+        model.addConstrs(gamma[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
+
+        # Alpha-beta relationship
+        model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_rows) for arc in arcs if arc.player == "leader")
+
+        # Blocking definition
+        M = {i: sum(min(C[i][j], 0) for j in range(Lcols)) for i in interaction_rows}
+        model.addConstrs(
+            C[i] @ x >= M[i] + beta[arc.id, i] * (-M[i] + instance.b[i] - arc.tail.state[i] + 1) 
+            for arc in arcs if arc.player == "leader" for i in interaction_rows
+        )
+
+    return model, time() - t0

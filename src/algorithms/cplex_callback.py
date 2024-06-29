@@ -4,7 +4,7 @@ import gurobipy as gp
 from cplex.callbacks import HeuristicCallback
 from docplex.mp.callbacks.cb_mixin import ModelCallbackMixin
 
-from constants import CUT_TYPES, BILEVEL_FREE_SET_SEP_TYPE
+from constants import BILEVEL_FREE_SET_SEP_TYPE
 
 from .utils.solve_follower_problem import solve as solve_follower_problem
 from .utils.solve_aux_problem import solve as solve_aux_problem
@@ -17,7 +17,7 @@ class CplexCallback:
         self.x = vars["x"]
         self.y = vars["y"]
         self.use_lazy_cuts = False
-        self.cut_types = CUT_TYPES
+        self.cut_types = None
         self.bilevel_free_set_sep_type = BILEVEL_FREE_SET_SEP_TYPE
     
     def hamming_distance(self, x_0):

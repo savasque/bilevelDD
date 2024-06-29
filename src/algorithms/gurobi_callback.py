@@ -1,25 +1,28 @@
+from time import time
 import numpy as np
 import gurobipy as gp
 
-from constants import CUT_TYPES, BILEVEL_FREE_SET_SEP_TYPE
+from constants import BILEVEL_FREE_SET_SEP_TYPE
 
-from .utils.solve_HPR import solve as solve_HPR
-from .utils.solve_follower_problem import solve as solve_follower_problem
-from .utils.solve_aux_problem import solve as solve_aux_problem
+from .formulations.gurobi.follower_problem import get_model as get_follower_model
+from .formulations.gurobi.aux_problem import get_model as get_aux_model
 
 
 class CallbackData:
-    def __init__(self, instance):
+    def __init__(self, instance, full_diagram=None):
         self.instance = instance
+        self.full_diagram = full_diagram
+        self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
+        self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
+        self.follower_model.Params.OutputFlag = 0
         self.root_node_bound = None
+        self.lazy_cuts = False
         self.was_root_node_visited = False
-        self.use_lazy_cuts = False
-        self.cut_types = CUT_TYPES
+        self.cuts_type = None
         self.bilevel_free_set_sep_type = BILEVEL_FREE_SET_SEP_TYPE
         self.num_cuts = 0
-        for cut_type in self.cut_types:
-            if cut_type not in ["no_good_cuts", "informed_no_good_cuts", "ISP_cuts"]:
-                raise ValueError("Cut type not found: {}".format(cut_type))
+        self.cuts_time = 0
+        self.value_function_pool = dict()
 
 class Callback:
     def callback(self, model, where, cbdata): 
@@ -28,42 +31,78 @@ class Callback:
                 cbdata.root_node_bound = model.cbGet(gp.GRB.Callback.MIPNODE_OBJBND)
                 cbdata.was_root_node_visited = True
         
-        elif where == gp.GRB.Callback.MIPSOL and cbdata.use_lazy_cuts:
+        elif where == gp.GRB.Callback.MIPSOL and cbdata.lazy_cuts:
+            t0 = time()
             instance = cbdata.instance
 
             # Retrieve solution
             x = model._vars["x"]
             y = model._vars["y"]
-            x_sol = list(model.cbGetSolution(x).values())
-            y_sol = list(model.cbGetSolution(y).values())
-            follower_value = solve_follower_problem(instance, x_sol)[0]
-            follower_response = solve_aux_problem(instance, x_sol, follower_value)[1]
+            x_sol = model.cbGetSolution(x)
+            y_sol = model.cbGetSolution(y)
 
+            new_value_function = False
+
+            # Compute value function
+            if str(x_sol) in cbdata.value_function_pool:
+                follower_value, follower_response = cbdata.value_function_pool[str(x_sol)]
+            else:
+                new_value_function = True
+                self.update_follower_model(instance, cbdata.follower_model, x_sol)
+                cbdata.follower_model.optimize()
+                follower_value = cbdata.follower_model.ObjVal
+                self.update_aux_model(instance, cbdata.aux_model, x_sol, follower_value)
+                cbdata.aux_model.optimize()
+                follower_response = cbdata.aux_model._vars["y"].X
+                cbdata.value_function_pool[str(x_sol)] = (follower_value, follower_response)
+
+            # Add cut
             if instance.d @ y_sol > follower_value + 1e-3:
+                if new_value_function:
+                    if cbdata.cuts_type == "INC+NGC":
+                        cbdata.num_cuts += 2
+                    else:
+                        cbdata.num_cuts += 1
+                    cbdata.cuts_time += time() - t0
+
                 # No-good cut
-                if "no_good_cuts" in cbdata.cut_types: 
+                if cbdata.cuts_type == "no_good_cuts": 
                     M = abs(follower_value)
-                    model.cbLazy(instance.d @ list(y.values()) <= follower_value + M * self.hamming_distance(x_sol, x))
-                    cbdata.num_cuts += 1
+                    model.cbLazy(instance.d @ y <= follower_value + M * self.hamming_distance(x_sol, x))
 
                 # Informed no-good cut
-                if "informed_no_good_cuts" in cbdata.cut_types:
+                elif cbdata.cuts_type == "INC":
                     G, g = self.build_bilevel_free_set_S(instance, x_sol, y_sol, follower_response)
-                    vars_values = x_sol + y_sol
-                    vars = list(x.values()) + list(y.values())
+                    vars_values = np.hstack((x_sol, y_sol))
+                    vars = [var for var in x] + [var for var in y]
                     beta = {i: g[i] - G[i] @ vars_values for i in range(G.shape[0])}
-                    G_bar = np.array([[G[i][j] if vars_values[j] == 0 else -G[i][j] for j in range(len(vars_values))] for i in range(G.shape[0])])
+                    G_bar = np.array([[G[i][j] if vars_values[j] < .5 else -G[i][j] for j in range(len(vars_values))] for i in range(G.shape[0])])
                     gamma = {j: max(G_bar[i][j] / beta[i] for i in range(G_bar.shape[0])) for j in range(len(vars_values))}
-                    model.cbLazy(gp.quicksum(gamma[j] * vars[j] for j in range(len(vars)) if vars_values[j] == 0) + gp.quicksum(gamma[j] * (1 - vars[j]) for j in range(len(vars)) if vars_values[j] == 1) >= 1)
-                    cbdata.num_cuts += 1
+                    model.cbLazy(gp.quicksum(gamma[j] * vars[j].item() for j in range(len(vars)) if vars_values[j] < .5) + gp.quicksum(gamma[j] * (1 - vars[j].item()) for j in range(len(vars)) if vars_values[j] > .5) >= 1)
 
+                else:
+                    raise ValueError("Non valid type of cut: {}".format(cbdata.cuts_type))
+            
             # Update UB
-            vars = np.array(list(x.values()) + list(y.values()))
-            values = np.array(x_sol + follower_response)
-            model.cbSetSolution(vars, values)
+            model.cbSetSolution([var.item() for var in x], x_sol)
+            model.cbSetSolution([var.item() for var in y], follower_response)
     
     def hamming_distance(self, x_0, x):
-        return gp.quicksum(x[j] for j in x if x_0[j] == 0) + gp.quicksum(1 - x[j] for j in x if x_0[j] == 1)
+        return gp.quicksum(x[j] for j in range(x.size) if x_0[j] < .5) + gp.quicksum(1 - x[j] for j in range(x.size) if x_0[j] > .5)
+
+    def update_follower_model(self, instance, model, x):
+        model._constrs.RHS = instance.b - instance.C @ x
+        model.reset()
+
+    def update_follower_model_DD(self, diagram, model, x):
+        for arc in diagram.arcs:
+            if arc.value == 1:
+                model._constrs[arc].RHS = 1 - x[arc.tail.state[0]]
+
+    def update_aux_model(self, instance, model, x, objval):
+        model._constrs["HPR"].RHS = instance.b - instance.C @ x
+        model._constrs["objval"].rhs = objval
+        model.reset()
 
     def build_bilevel_free_set_S(self, instance, x_sol, y_sol, follower_response):
         # SEP-1
@@ -71,10 +110,11 @@ class Callback:
             y_hat = follower_response
 
             # Build set
-            G_x = np.vstack((instance.C, np.zeros(instance.Lcols)))
-            G_y = np.vstack((np.zeros((instance.Frows, instance.Fcols)), -instance.d))
+            selected_rows = [i for i, val in instance.interaction.items() if val == "both"] 
+            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
             G = np.hstack((G_x, G_y))
-            g_x = instance.b + 1 - instance.D @ y_hat
+            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
             g_y = -instance.d @ y_hat
             g = np.hstack((g_x, g_y))
 
@@ -82,28 +122,29 @@ class Callback:
         elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-2":
             sep_model = gp.Model()
             sep_model.Params.OutputFlag = 0
-            y = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
-            w = sep_model.addVars(instance.Frows, vtype=gp.GRB.BINARY)
-            s = sep_model.addVars(instance.Frows, lb=-gp.GRB.INFINITY)
-            L_max = {i: instance.C[i].sum() for i in range(instance.Frows)}
-            L_star = {i: instance.C[i] @ x_sol for i in range(instance.Frows)}
+            y = sep_model.addMVar(instance.Fcols, vtype=gp.GRB.BINARY)
+            w = sep_model.addMVar(instance.Frows, vtype=gp.GRB.BINARY)
+            s = sep_model.addMVar(instance.Frows, lb=-gp.GRB.INFINITY)
+            L_max = np.array([sum(max(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in range(instance.Frows)])
+            L_star = instance.C @ x_sol
 
-            sep_model.addConstr(instance.d @ list(y.values()) <= instance.d @ y_sol - 1)
-            sep_model.addConstrs(instance.D[i] @ list(y.values()) + s[i] == instance.b[i] for i in range(instance.Frows))
+            sep_model.addConstr(instance.d @ y <= instance.d @ y_sol - 1)
+            sep_model.addConstr(instance.D @ y + s == instance.b)
             sep_model.addConstrs(s[i] + (L_max[i] - L_star[i]) * w[i] >= L_max[i] for i in range(instance.Frows))
-            sep_model.setObjective(gp.quicksum(w[i] for i in range(instance.Frows)), sense=gp.GRB.MINIMIZE)
+            sep_model.setObjective(np.ones(w.size) @ w, sense=gp.GRB.MINIMIZE)
             sep_model.optimize()
 
-            y_hat = [i.X for i in y.values()]
+            y_hat = y.X
 
             # Build set
-            G_x = np.vstack((instance.C, np.zeros(instance.Lcols)))
-            G_y = np.vstack((np.zeros((instance.Frows, instance.Fcols)), -instance.d))
+            selected_rows = [i for i, val in instance.interaction.items() if val == "both" and w[i].X > .5] 
+            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
             G = np.hstack((G_x, G_y))
-            g_x = instance.b + 1 - instance.D @ y_hat
+            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
             g_y = -instance.d @ y_hat
             g = np.hstack((g_x, g_y))
-
+        
         # SEP-3
         elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-3":
             sep_model = gp.Model()
@@ -111,26 +152,26 @@ class Callback:
             delta = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
             t = sep_model.addVars(instance.Frows)
 
-            sep_model.addConstr(instance.d @ list(delta.values()) <= - 1)
+            sep_model.addConstr(instance.d @ list(delta.values()) <= -1)
             sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= instance.b[i] - instance.C[i] @ x_sol - instance.D[i] @ y_sol for i in range(instance.Frows))
             sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= t[i] for i in range(instance.Frows))
             sep_model.setObjective(gp.quicksum(t[i] for i in range(instance.Frows)), sense=gp.GRB.MINIMIZE)
             sep_model.optimize()
 
-            y_hat = [i.X for i in delta.values()]
+            delta_y = [i.X for i in delta.values()]
 
             # Build set
             G = np.hstack((instance.C, instance.D))
-            g = instance.b + 1 - instance.D @ y_hat
-            for j in range(instance.Fcols):
-                e = np.zeros(instance.Fcols)
-                e[j] = -1
-                G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
-                g = np.append(g, y_hat[j] + 1)
+            g = (instance.b + 1 - instance.D @ delta_y)
+            # for j in range(instance.Fcols):
+                # e = np.zeros(instance.Fcols)
+                # e[j] = -1
+                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+                # g = np.append(g, delta_y[j])
 
-                e = np.zeros(instance.Fcols)
-                e[j] = 1
-                G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
-                g = np.append(g, 2 - y_hat[j])
+                # e = np.zeros(instance.Fcols)
+                # e[j] = 1
+                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+                # g = np.append(g, 1 - delta_y[j])
         
         return G, g

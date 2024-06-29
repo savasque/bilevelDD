@@ -82,9 +82,8 @@ class Operations:
             Returns: dict of sorted indices (dict)
         """
         
-        order = {"leader": list(), "follower": np.array([])}
-        if compressed_leader:
-            order["leader"] = [j for j in range(instance.Lcols)]
+        order = {"leader": list(), "follower": list()}
+        t0 = time()
 
         # Sum coeffs of the left hand side
         if ordering_heuristic == "lhs_coeffs":
@@ -94,12 +93,6 @@ class Operations:
                 order["follower"].append((j, coeffs_sum))
             order["follower"].sort(key=lambda x: x[1])  # Sort variables in ascending order
             order["follower"] = [i[0] for i in order["follower"]]
-            if not compressed_leader:
-                for j in range(instance.Lcols):
-                    coeffs_sum = sum(instance.C[i][j] for i in range(instance.Frows))
-                    order["leader"].append((j, coeffs_sum))
-                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order["leader"] = [i[0] for i in order["leader"]]
 
         # Leader cost
         elif ordering_heuristic == "leader_cost":
@@ -108,26 +101,11 @@ class Operations:
                 order["follower"].append((j, instance.c_follower[j]))
             order["follower"].sort(key=lambda x: x[1])  # Sort variables in ascending order
             order["follower"] = [i[0] for i in order["follower"]]
-            if not compressed_leader:
-                for j in range(instance.Lcols):
-                    order["leader"].append((j, instance.c_leader[j]))
-                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order["leader"] = [i[0] for i in order["leader"]]
 
         # Follower costs
         elif ordering_heuristic == "follower_cost":
             self.logger.debug("Variable ordering heuristic: follower cost")
-            costs = np.array([])
-            for j in range(instance.Fcols):
-                pos = costs.searchsorted(instance.d[j])
-                costs = np.insert(costs, pos, instance.d[j])
-                order["follower"] = np.insert(order["follower"], pos, j)
-            order["follower"] = order["follower"].astype(int)
-            if not compressed_leader:
-                for j in range(instance.Lcols):
-                    order["leader"].append((j, instance.c_leader[j]))
-                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order["leader"] = [i[0] for i in order["leader"]]
+            order["follower"] = sorted([j for j in range(instance.Fcols)], key=lambda x: instance.d[x])
 
         # Leader feasibility
         elif ordering_heuristic == "leader_feasibility":
@@ -136,11 +114,6 @@ class Operations:
                 order["follower"].append((j, max([instance.D[i][j] for i in range(instance.Frows)]), sum([instance.D[i][j] for i in range(instance.Frows)])))
             order["follower"].sort(key=lambda x: (x[1], x[2]))  # Sort variables in ascending order
             order["follower"] = [i[0] for i in order["follower"]]
-            if not compressed_leader:
-                for j in range(instance.Lcols):
-                    order["leader"].append((j, instance.c_leader[j]))
-                order["leader"].sort(key=lambda x: x[1])  # Sort variables in ascending order
-                order["leader"] = [i[0] for i in order["leader"]]
                 
         # Lexicographic
         elif ordering_heuristic == "lexicographic":
@@ -182,13 +155,12 @@ class Operations:
                 order["follower"].append(column[0])
                 remaining_columns.pop(column[1][0])
 
-            if not compressed_leader:
-                order["leader"] = [i for i in range(instance.Lcols)]
-
         else:
-            raise ValueError("Invalid ordering heristic value")
+            raise ValueError("Invalid ordering heuristic value")
+        
+        order["leader"] = [i for i in range(instance.Lcols)]
 
-        return order
+        return order, time() - t0
 
     def create_zero_node(self, layer, parent_node):
         node = Node(id=None, layer=layer, state=list(parent_node.state), type=0)
@@ -241,19 +213,16 @@ class Operations:
         node.leader_cost = min(node.leader_cost, new_node.leader_cost)
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
 
-    def reduce_queue(self, instance, discard_method, queue, max_width, player):
-        if player == "follower":
-            if discard_method == "follower_cost":
-                sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
-            elif discard_method == "minmax_state":
-                sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state - instance.b), sum(x.state), x.follower_cost)))
-            elif discard_method == "random":
-                sorted_queue = queue
-                shuffle(sorted_queue)
-            elif discard_method == "minsum_state":
-                sorted_queue = deque(sorted(queue, key=lambda x: sum(x.state), reverse=True))
-        else:
-            sorted_queue = deque(sorted(queue, key=lambda x: x.leader_cost))  # Sort nodes in ascending order
+    def reduce_queue(self, instance, discard_method, queue, max_width):
+        if discard_method == "follower_cost":
+            sorted_queue = deque(sorted(queue, key=lambda x: x.follower_cost))
+        elif discard_method == "minmax_state":
+            sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state - instance.b), sum(x.state), x.follower_cost)))
+        elif discard_method == "random":
+            sorted_queue = queue
+            shuffle(sorted_queue)
+        elif discard_method == "minsum_state":
+            sorted_queue = deque(sorted(queue, key=lambda x: sum(x.state), reverse=True))
 
         filtered_queue = deque()
         remaining_nodes = deque()
@@ -281,8 +250,9 @@ class Operations:
     def blocking_distance(self, instance, node_1, node_2):
         distance = 0
         for i in range(instance.Frows):
-            if node_1.state[i] != None and instance.interaction[i] == "both" and node_1.state[i] < node_2.state[i]:
-                distance += 1
+            if instance.interaction[i] == "both":
+                if node_1.state[i] < node_2.state[i]:
+                    distance += 1
 
         return distance
 

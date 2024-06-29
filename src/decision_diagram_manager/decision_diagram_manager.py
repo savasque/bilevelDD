@@ -11,21 +11,19 @@ from classes.decision_diagram import DecisionDiagram
 
 from algorithms.utils.solve_HPR import solve as solve_HPR
 
-from .compilation_methods.follower_then_leader import FollowerThenLeaderCompiler
-from .compilation_methods.follower_then_compressed_leader import FollowerThenCompressedLeaderCompiler
+from .compilation_methods.follower_then_full_leader import FollowerThenLeaderCompiler
+from .compilation_methods.follower_then_leader import FollowerThenCompressedLeaderCompiler
 
 class DecisionDiagramManager:
     def __init__(self):
         self.logger = logzero.logger
         self.compilation_methods = {
-            "follower_then_leader": self.compile_diagram_follower_then_leader,
-            "leader_then_follower": self.compile_diagram_leader_then_follower,
-            "follower_then_compressed_leader": self.compile_diagram_follower_then_compressed_leader,
+            "branching": self.compile_diagram_follower_then_compressed_leader,
             "iterative": self.compile_diagram_iteratively
         }
 
-    def compile_diagram(self, diagram, instance, compilation_method, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation=False):
-        diagram = self.compilation_methods[compilation_method](diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation)
+    def compile_diagram(self, diagram, instance, ordering_heuristic, method, max_width, discard_method):
+        diagram = self.compilation_methods[method](diagram, instance, max_width, ordering_heuristic, discard_method)
         
         return diagram
 
@@ -347,8 +345,8 @@ class DecisionDiagramManager:
 
         return clean_diagram
 
-    def compile_diagram_follower_then_compressed_leader(self, diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation):
+    def compile_diagram_follower_then_compressed_leader(self, diagram, instance, max_width, ordering_heuristic, discard_method):
         compiler = FollowerThenCompressedLeaderCompiler(self.logger)
-        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, discard_method, HPR_optimal_solution, skip_brute_force_compilation)
+        compiled_diagram = compiler.compile(diagram, instance, max_width, ordering_heuristic, discard_method)
         
         return compiled_diagram

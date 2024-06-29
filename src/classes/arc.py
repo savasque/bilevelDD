@@ -6,7 +6,6 @@ class Arc:
         self.cost = cost
         self.var_index = var_index
         self.player = player  # "leader" | "follower" | "dummy"
-        self.block_values = dict()
 
     @property
     def id(self):

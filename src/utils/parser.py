@@ -129,6 +129,7 @@ class Parser:
 
     def write_results(self, result, name):
         new_result = pd.DataFrame([result], index=["instance"])
+        new_result["instance_id"] = new_result["instance"].apply(lambda x: x.split("/")[-1])
         new_result.set_index("instance", inplace=True)
         try:
             current_results = pd.read_excel("results/{}.xlsx".format(name))
@@ -137,8 +138,6 @@ class Parser:
             current_results.to_excel("results/{}.xlsx".format(name))
         except:
             new_result.to_excel("results/{}.xlsx".format(name))
-
-        return name
     
     def plot_graph(self, instance, result):
         import networkx as nx
