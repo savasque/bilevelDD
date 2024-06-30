@@ -5,7 +5,7 @@ LOG_LEVEL = "DEBUG"
 # Compilation
 ORDERING_HEURISTIC = ["follower_cost"]  # ["lhs_coeffs", "leader_cost", "follower_cost", "leader_feasibility", "max_connected_degree"]
 DISCARD_METHOD = ["follower_cost"]  #["follower_cost", "minmax_state", "random"]
-SAMPLING_LENGTH = 0
+SAMPLING_LENGTH = 100
 SAMPLING_METHOD = "partitioning"
 
 # Solver

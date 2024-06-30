@@ -66,12 +66,12 @@ class Callback:
                     cbdata.cuts_time += time() - t0
 
                 # No-good cut
-                if cbdata.cuts_type == "no_good_cuts": 
+                if cbdata.cuts_type in ["no_good_cuts", "INC+NGC"]: 
                     M = abs(follower_value)
                     model.cbLazy(instance.d @ y <= follower_value + M * self.hamming_distance(x_sol, x))
 
                 # Informed no-good cut
-                elif cbdata.cuts_type == "INC":
+                elif cbdata.cuts_type in ["INC", "INC+NGC"]:
                     G, g = self.build_bilevel_free_set_S(instance, x_sol, y_sol, follower_response)
                     vars_values = np.hstack((x_sol, y_sol))
                     vars = [var for var in x] + [var for var in y]

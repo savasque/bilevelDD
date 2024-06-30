@@ -56,12 +56,14 @@ class FollowerThenCompressedLeaderCompiler:
         self.branching_compilation(instance, diagram, var_order, max_width, discard_method)
 
         ## Sampled solutions compilation
-        if diagram.width == 1 and SAMPLING_LENGTH:
-            # Build set Y
-            sampling_runtime = 0
-            Y, sampling_runtime = self.sample_follower_solutions(instance)
-            diagram.sampling_runtime = sampling_runtime
-            self.sampling_compilation(instance, diagram, var_order, max_width, Y)
+        if SAMPLING_LENGTH:
+            self.operations.clean_diagram(diagram)
+            if diagram.width == 1:
+                # Build set Y
+                sampling_runtime = 0
+                Y, sampling_runtime = self.sample_follower_solutions(instance)
+                diagram.sampling_runtime = sampling_runtime
+                self.sampling_compilation(instance, diagram, var_order, max_width, Y)
         
         # Compress follower layers
         root_node = diagram.root_node
@@ -235,9 +237,6 @@ class FollowerThenCompressedLeaderCompiler:
                             # Compile compressed leader layer
                             if layer == instance.Fcols - 1:
                                 arc = Arc(tail=child_node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
-                                for i in range(instance.Frows):
-                                    if instance.interaction[i] == "both":
-                                        arc.block_values[i] = instance.b[i] - node.state[i] + 1  # TODO: check the +1
                                 diagram.add_arc(arc)
                     
                     # One head
@@ -261,9 +260,6 @@ class FollowerThenCompressedLeaderCompiler:
                             # Compile compressed leader layer
                             if layer == instance.Fcols - 1:
                                 arc = Arc(tail=child_node, head=diagram.sink_node, value=0, cost=0, var_index=-1, player="leader")
-                                for i in range(instance.Frows):
-                                    if instance.interaction[i] == "both":
-                                        arc.block_values[i] = instance.b[i] - child_node.state[i] + 1 
                                 diagram.add_arc(arc)
                     
                     fixed_y_values[var_index] = True
