@@ -22,11 +22,19 @@ def run(args):
             # Load data
             instance = parser.build_instance(args.instance_name)
 
-            ## One-time compilation approach
-            result = algorithms_manager.one_time_compilation_approach(
-                instance, args.max_width, ordering_heuristic, 
-                discard_method, constants.SOLVER_TIME_LIMIT, args.approach
-            )
+            if args.approach != "iterative":
+                ## One-time compilation approach
+                result = algorithms_manager.one_time_compilation_approach(
+                    instance, args.max_width, ordering_heuristic, 
+                    discard_method, constants.SOLVER_TIME_LIMIT, args.approach
+                )
+
+            else:
+                ## Iterative approach
+                result = algorithms_manager.iterative_approach(
+                    instance, args.max_width, ordering_heuristic, 
+                    discard_method, constants.SOLVER_TIME_LIMIT, args.approach
+                )
 
             # Remove solutions
             del result["solution"]
@@ -41,7 +49,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--instance_name", "-i", type=str) 
     parser.add_argument("--max_width", "-w", type=int, default=0)
-    parser.add_argument("--approach", "-a", type=str)  #lazy_cuts:no_good_cuts, lazy_cuts:INC, disjunctions, relaxation, write_model
+    parser.add_argument("--approach", "-a", type=str)  #lazy_cuts:no_good_cuts, lazy_cuts:INC, disjunctions, iterative, relaxation, write_model
     args = parser.parse_args()
 
     # Testing
@@ -82,9 +90,10 @@ if __name__ == "__main__":
     ]
 
     if not args.max_width:
-        args.max_width = 25
+        args.max_width = 100
     if not args.approach:
-        args.approach = "lazy_cuts:INC"
+        # args.approach = "lazy_cuts:INC"
+        args.approach = "iterative"
     if not args.instance_name:
         for instance in INSTANCES:
             args.instance_name = instance

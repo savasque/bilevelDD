@@ -215,7 +215,7 @@ class Operations:
 
     def reduce_queue(self, instance, discard_method, queue, max_width):
         if discard_method == "follower_cost":
-            sorted_queue = deque(sorted(queue, key=lambda x: x.follower_cost))
+            sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
         elif discard_method == "minmax_state":
             sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state - instance.b), sum(x.state), x.follower_cost)))
         elif discard_method == "random":
