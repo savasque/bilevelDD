@@ -5,7 +5,6 @@ import numpy as np
 def get_model(instance, diagram, incumbent=None):
     Lcols = instance.Lcols
     Fcols = instance.Fcols
-    Frows = instance.Frows
     A = instance.A
     B = instance.B
     C = instance.C

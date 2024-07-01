@@ -68,7 +68,7 @@ class Callback:
                 # No-good cut
                 if cbdata.cuts_type in ["no_good_cuts", "INC+NGC"]: 
                     M = abs(follower_value)
-                    model.cbLazy(instance.d @ y <= follower_value + M * self.hamming_distance(x_sol, x))
+                    model.cbLazy(gp.quicksum(instance.d[j] * y[j].item() for j in range(instance.Fcols)) <= follower_value + M * self.hamming_distance(x_sol, x))
 
                 # Informed no-good cut
                 elif cbdata.cuts_type in ["INC", "INC+NGC"]:
@@ -88,7 +88,7 @@ class Callback:
             model.cbSetSolution([var.item() for var in y], follower_response)
     
     def hamming_distance(self, x_0, x):
-        return gp.quicksum(x[j] for j in range(x.size) if x_0[j] < .5) + gp.quicksum(1 - x[j] for j in range(x.size) if x_0[j] > .5)
+        return gp.quicksum(x[j].item() for j in range(x.size) if x_0[j] < .5) + gp.quicksum(1 - x[j].item() for j in range(x.size) if x_0[j] > .5)
 
     def update_follower_model(self, instance, model, x):
         model._constrs.RHS = instance.b - instance.C @ x
