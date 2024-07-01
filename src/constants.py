@@ -1,6 +1,6 @@
 ## Parameters
 # General
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "INFO"
 
 # Compilation
 ORDERING_HEURISTIC = ["follower_cost"]  # ["lhs_coeffs", "leader_cost", "follower_cost", "leader_feasibility", "max_connected_degree"]

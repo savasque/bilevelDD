@@ -102,6 +102,7 @@ class AlgorithmsManager:
         self.logger.info("Initial bounds -> LB: {lower_bound} - UB: {upper_bound} - Bilevel gap: {bilevel_gap}".format(**result))
 
         model.Params.OutputFlag = 0
+        best_result = result
 
         # Create new DDs and cuts
         while time() - t0 <= solver_time_limit:
@@ -129,36 +130,35 @@ class AlgorithmsManager:
                     bilevel_gap = 100 * round((UB - LB) / abs(UB + 1e-6), 6)
                     if LB_diff > 0 or UB_diff < 0:
                         self.logger.info("New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, bilevel_gap))
-                else:
-                    raise ValueError("Infeasible model")
+                        best_result = result
 
                 iter += 1
 
         # Update final result
-        result["approach"] = "iterative"
-        result["discard_method"] = discard_method
-        result["total_runtime"] = round(time() - t0)
-        result["iters"] = iter
+        best_result["approach"] = "iterative"
+        best_result["discard_method"] = discard_method
+        best_result["total_runtime"] = round(time() - t0)
+        best_result["iters"] = iter
 
         # Update HPR info
         HPR_value, _, _, HPR_runtime = self.get_HPR_bounds(instance)
-        result["HPR"] = HPR_value
-        result["HPR_runtime"] = HPR_runtime
+        best_result["HPR"] = HPR_value
+        best_result["HPR_runtime"] = HPR_runtime
         
-        if result["bilevel_gap"] < 1e-6:
-            result["opt"] = 1
+        if best_result["bilevel_gap"] < 1e-6:
+            best_result["opt"] = 1
         else:
-            result["opt"] = 0
+            best_result["opt"] = 0
 
         # Compute continuous relaxation bound
         relaxed_model = model.relax()
         relaxed_model.Params.OutputFlag = 0
         relaxed_model.optimize()
-        result["relaxation_obj_val"] = relaxed_model.objval
+        best_result["relaxation_obj_val"] = relaxed_model.objval
 
-        self.logger.warning("Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - Iters: {iters}".format(**result))
+        self.logger.warning("Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - Iters: {iters} - MIPGap: {mip_gap} - BilevelGap: {bilevel_gap} - HPR: {HPR} - Runtime: {total_runtime} - Iters: {iters}".format(**best_result))
 
-        return result
+        return best_result
     
     def update_upper_bound(self, instance, result):
         result["upper_bound"] = float("inf")
