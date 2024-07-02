@@ -172,7 +172,7 @@ class AlgorithmsManager:
 
         self.update_follower_model(instance, follower_model, result["solution"]["x"])
         follower_model.optimize()
-        result["follower_value"] = follower_model.ObjVal
+        result["follower_value"] = round(follower_model.ObjVal)
         self.update_aux_model(instance, aux_model, result["solution"]["x"], result["follower_value"])
         aux_model.optimize()
         result["follower_response"] = aux_model._vars["y"].X
