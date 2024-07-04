@@ -269,7 +269,7 @@ class Operations:
                 node.id = label
                 label += 1
 
-        self.logger.debug("Bottom-up filtering done -> Time elapsed: {} s".format(time() - t0))
+        self.logger.debug("Bottom-up filtering done -> Time elapsed: {} s".format(round(time() - t0)))
 
     def bottom_up_filtering(self, diagram):
         for node in diagram.nodes:

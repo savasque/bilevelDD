@@ -33,7 +33,7 @@ def run(args):
                 ## Iterative approach
                 result = algorithms_manager.iterative_approach(
                     instance, args.max_width, ordering_heuristic, 
-                    discard_method, constants.SOLVER_TIME_LIMIT, args.approach
+                    discard_method, constants.SOLVER_TIME_LIMIT
                 )
 
             # Remove solutions
@@ -90,10 +90,12 @@ if __name__ == "__main__":
     ]
 
     if not args.max_width:
-        args.max_width = 100
+        args.max_width = 25
     if not args.approach:
+        # args.approach = "relaxation"
         # args.approach = "lazy_cuts:INC"
         args.approach = "iterative"
+        # args.approach = "disjunctions"
     if not args.instance_name:
         for instance in INSTANCES:
             args.instance_name = instance

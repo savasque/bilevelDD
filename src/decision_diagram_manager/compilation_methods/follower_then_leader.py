@@ -48,7 +48,7 @@ class FollowerThenCompressedLeaderCompiler:
         # Create dummy long arc
         self.logger.debug("Solving follower problem to build dummy arc")
         M = solve_follower_problem(instance, sense="maximize")[0]
-        self.logger.debug("Big-M value: {}".format(M))
+        self.logger.debug("Dummy arc big-M value: {}".format(M))
         dummy_arc = Arc(tail=root_node, head=sink_node, value=0, cost=M, var_index=None, player="dummy")
         diagram.add_arc(dummy_arc)
 
@@ -85,7 +85,7 @@ class FollowerThenCompressedLeaderCompiler:
         diagram.compilation_runtime = time() - t0
         
         self.logger.info("Diagram succesfully compiled -> Time elapsed: {} s - Node count: {} - Arc count: {} - Width: {}".format(
-            diagram.compilation_runtime, diagram.node_count + 2, diagram.arc_count, diagram.width
+            round(diagram.compilation_runtime), diagram.node_count + 2, diagram.arc_count, diagram.width
         ))
 
         return diagram
