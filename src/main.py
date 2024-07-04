@@ -11,9 +11,8 @@ logzero.loglevel(logging.getLevelName(constants.LOG_LEVEL))
 logger = logzero.logger
 
 def run(args):
-    # Classes instantiation
+    # Parser instantiation
     parser = Parser()
-    algorithms_manager = AlgorithmsManager()
 
     file_name = "w{}|{}".format(args.max_width, args.approach)
 
@@ -21,6 +20,9 @@ def run(args):
         for ordering_heuristic in constants.ORDERING_HEURISTIC: 
             # Load data
             instance = parser.build_instance(args.instance_name)
+
+            # Initiate AlgorithmsManager
+            algorithms_manager = AlgorithmsManager(instance)
 
             if args.approach != "iterative":
                 ## One-time compilation approach
