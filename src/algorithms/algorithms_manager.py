@@ -91,11 +91,14 @@ class AlgorithmsManager:
         t0 = time()
         iter = 0
 
-        # Compile diagram
-        diagram = diagram_manager.compile_diagram(
-            diagram, instance, ordering_heuristic, 
-            method="branching", max_width=max_width, discard_method=discard_method
-        )
+        if max_width > 0:
+            # Compile diagram
+            diagram = diagram_manager.compile_diagram(
+                diagram, instance, ordering_heuristic, 
+                method="branching", max_width=max_width, discard_method=discard_method
+            )
+        else:
+            diagram = None
 
         # Get HPR info
         HPR_value, _, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds(instance)
