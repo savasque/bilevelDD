@@ -12,7 +12,7 @@ def get_model(instance, x, objval):
             instance.D @ y
             <= instance.b - instance.C @ x
         ),
-        "objval": model.addConstr(instance.d @ y == objval)
+        "objval": model.addConstr(instance.d @ y <= objval)
     }
     
     obj = instance.c_follower @ y

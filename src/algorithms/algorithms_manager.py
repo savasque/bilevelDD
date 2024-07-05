@@ -197,7 +197,7 @@ class AlgorithmsManager:
         # Solve models
         self.update_follower_model(instance, follower_model, x)
         follower_model.optimize()
-        follower_value = round(follower_model.ObjVal)
+        follower_value = follower_model.ObjVal + .5
         self.update_aux_model(instance, aux_model, x, follower_value)
         aux_model.optimize()
         follower_response = aux_model._vars["y"].X
