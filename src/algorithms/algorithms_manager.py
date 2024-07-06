@@ -374,6 +374,7 @@ class AlgorithmsManager:
             "nF": instance.Fcols,
             "mL": len(instance.a),
             "mF": len(instance.b),
+            "num_threads": self.num_threads,
             "approach": None,
             "max_width": 0 if not diagram else diagram.max_width,
             "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
