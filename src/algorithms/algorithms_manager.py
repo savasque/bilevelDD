@@ -20,12 +20,15 @@ from .utils.solve_HPR import solve as solve_HPR
 
 
 class AlgorithmsManager:
-    def __init__(self, instance):
+    def __init__(self, instance, num_threads):
         self.logger = logzero.logger
         self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
         self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
         self.follower_model.Params.OutputFlag = 0
         self.aux_model.Params.OutputFlag = 0
+        self.follower_model.Params.Threads = num_threads
+        self.aux_model.Params.Threads = num_threads
+        self.num_threads = num_threads
 
     def one_time_compilation_approach(self, instance, max_width, ordering_heuristic, discard_method, solver_time_limit, approach):
         diagram = DecisionDiagram(0)
@@ -280,7 +283,6 @@ class AlgorithmsManager:
         # Add cut associated to HPR
         model_building_runtime += self.add_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
 
-
         if approach == "write_model":
             ######################################################## Write mod model aux file #############################################################
             from utils.utils import write_modified_model_mps_file, copy_aux_file
@@ -332,6 +334,7 @@ class AlgorithmsManager:
             
             # Solve DD reformulation
             model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
+            model.Params.Threads = self.num_threads
             model.optimize(lambda model, where: callback_func(model, where))
             self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(model.objBound, model.MIPGap, round(model.runtime)))
 
@@ -350,7 +353,7 @@ class AlgorithmsManager:
         model._constrs["HPR"].RHS = instance.b - instance.C @ x
         model._constrs["objval"].RHS = objval
         model.reset()
-    
+
     def check_leader_feasibility(self, instance, x, y):
         if instance.Lrows == 0:
             return True
@@ -359,7 +362,7 @@ class AlgorithmsManager:
             return True
         
         return False
-
+    
     def get_gurobi_results(self, instance, diagram, model, model_building_runtime):
         try:
             objval = model.objVal
@@ -503,80 +506,3 @@ class AlgorithmsManager:
         B = ss.csr_matrix((values, (row_indices, col_indices)), shape=(m, m)).A
 
         return B, basic_vars
-
-    
-        import gurobipy as gp
-
-        # SEP-1
-        if sep == "SEP-1":
-            y_hat = follower_response
-
-            # Build set
-            selected_rows = [idx for idx, val in instance.interaction.items() if val != "leader"]
-            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
-            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
-            G = np.hstack((G_x, G_y))
-            g_x = instance.b[selected_rows] + 1 - instance.D[selected_rows, :] @ y_hat
-            g_y = -instance.d @ y_hat
-            g = np.hstack((g_x, g_y))
-
-        # SEP-2
-        elif sep == "SEP-2":
-            sep_model = gp.Model()
-            sep_model.Params.OutputFlag = 0
-            selected_rows = [idx for idx, val in instance.interaction.items() if val != "leader"]
-            # selected_rows = [i for i in range(instance.Frows)]
-            y = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
-            w = sep_model.addVars(selected_rows, vtype=gp.GRB.BINARY)
-            s = sep_model.addVars(selected_rows, lb=-gp.GRB.INFINITY)
-            L_max = {i: sum(max(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in selected_rows}
-            L_star = {i: instance.C[i] @ x_sol for i in selected_rows}
-
-            sep_model.addConstr(instance.d @ list(y.values()) <= instance.d @ y_sol - 1)
-            sep_model.addConstrs(instance.D[i] @ list(y.values()) + s[i] == instance.b[i] for i in selected_rows)
-            sep_model.addConstrs(s[i] + (L_max[i] - L_star[i]) * w[i] >= L_max[i] for i in selected_rows)
-            sep_model.setObjective(gp.quicksum(w[i] for i in selected_rows), sense=gp.GRB.MINIMIZE)
-            sep_model.optimize()
-
-            y_hat = [i.X for i in y.values()]
-
-            # Build set
-            selected_rows = [i for i, val in w.items() if val.X > .5]
-            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
-            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
-            G = np.hstack((G_x, G_y))
-            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
-            g_y = -instance.d @ y_hat
-            g = np.hstack((g_x, g_y))
-
-        # SEP-3
-        elif sep == "SEP-3":
-            sep_model = gp.Model()
-            sep_model.Params.OutputFlag = 0
-            selected_rows = [idx for idx, val in instance.interaction.items() if val == "both"]
-            delta = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
-            t = sep_model.addVars(selected_rows)
-
-            sep_model.addConstr(instance.d @ list(delta.values()) <= -1)
-            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= instance.b[i] - instance.C[i] @ x_sol - instance.D[i] @ y_sol for i in selected_rows)
-            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= t[i] for i in selected_rows)
-            sep_model.setObjective(gp.quicksum(t[i] for i in selected_rows), sense=gp.GRB.MINIMIZE)
-            sep_model.optimize()
-
-            delta_y = [i.X for i in delta.values()]
-
-            # Build set
-            G = np.hstack((instance.C, instance.D))[selected_rows, :]
-            g = (instance.b + 1 - instance.D @ delta_y)[selected_rows]
-            # for j in range(instance.Fcols):
-                # e = np.zeros(instance.Fcols)
-                # e[j] = -1
-                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
-                # g = np.append(g, delta_y[j])
-
-                # e = np.zeros(instance.Fcols)
-                # e[j] = 1
-                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
-                # g = np.append(g, 1 - delta_y[j])
-        
-        return G, g

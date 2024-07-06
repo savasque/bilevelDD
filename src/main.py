@@ -22,7 +22,7 @@ def run(args):
             instance = parser.build_instance(args.instance_name)
 
             # Initiate AlgorithmsManager
-            algorithms_manager = AlgorithmsManager(instance)
+            algorithms_manager = AlgorithmsManager(instance, args.num_threads)
 
             if args.approach != "iterative":
                 ## One-time compilation approach
@@ -52,6 +52,7 @@ if __name__ == "__main__":
     parser.add_argument("--instance_name", "-i", type=str) 
     parser.add_argument("--max_width", "-w", type=int, default=0)
     parser.add_argument("--approach", "-a", type=str)  #lazy_cuts:no_good_cuts, lazy_cuts:INC, disjunctions, iterative, relaxation, write_model
+    parser.add_argument("--num_threads", "-t", type=int, default=0)
     args = parser.parse_args()
 
     # Testing
@@ -92,7 +93,7 @@ if __name__ == "__main__":
     ]
 
     if not args.max_width:
-        args.max_width = 25
+        args.max_width = 0
     if not args.approach:
         # args.approach = "relaxation"
         # args.approach = "lazy_cuts:INC"
