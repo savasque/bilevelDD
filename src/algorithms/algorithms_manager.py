@@ -148,16 +148,26 @@ class AlgorithmsManager:
             # Refine model
             else:
                 # Current solution is not bilevel feasible. Update bounds, add a cut and solve again
-                model_build_time += self.add_DD_cuts(instance, model, result)
-                model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
+                if self.solver == "gurobi":
+                    model_build_time += self.add_gurobi_DD_cuts(instance, model, result)
+                    model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
+                elif self.solver == "cplex":
+                    model_build_time += self.add_gurobi_DD_cuts(instance, model, result)
+                    model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
+                
                 self.logger.debug("Solving new model with added cuts. Updated time limit: {} s".format(round(solver_time_limit - (time() - t0))))
-                model.optimize()
-                model_time += model.runtime
+
+                if self.solver == "gurobi":
+                    model.optimize()
+                    model_time += model.runtime
+                elif self.solver == "cplex":
+                    model.optimize()
+                    model_time += model.runtime
 
                 # Solved model
                 if model.status == 2:
                     self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.runtime)))
-                    result = self.get_gurobi_results(instance, diagram, model, 0)
+                    result = self.get_results(instance, diagram, model, 0)
                 
                     # Update bounds
                     cuts_time += self.update_upper_bound(instance, result)
@@ -215,10 +225,7 @@ class AlgorithmsManager:
             model, model_building_runtime = get_cplex_model(instance, diagram)
 
         # Add cut associated to HPR
-        if solver == "gurobi":
-            model_building_runtime += self.add_gurobi_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
-        elif solver == "cplex":
-            model_building_runtime += self.add_cplex_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
+        model_building_runtime += self.add_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
 
         if approach == "write_model":
             ######################################################## Write mod model aux file #############################################################
@@ -279,7 +286,7 @@ class AlgorithmsManager:
                     model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
                 ))
 
-                results = self.get_gurobi_results(instance, diagram, model, model_building_runtime)
+                results = self.get_results(instance, diagram, model, model_building_runtime)
             
             elif solver == "cplex":
                 callback_data = GurobiCallbackData(instance)
@@ -316,12 +323,20 @@ class AlgorithmsManager:
         aux_model = self.aux_model
 
         # Solve models
-        self.update_gurobi_follower_model(instance, x)
-        follower_model.optimize()
-        follower_value = follower_model.ObjVal + .5
-        self.update_gurobi_aux_model(instance, x, follower_value)
-        aux_model.optimize()
-        follower_response = aux_model._vars["y"].X
+        if self.solver == "gurobi":
+            self.update_follower_model(instance, x)
+            follower_model.optimize()
+            follower_value = follower_model.ObjVal + .5
+            self.update_aux_model(instance, x, follower_value)
+            aux_model.optimize()
+            follower_response = aux_model._vars["y"].X
+        elif self.solver == "cplex":
+            self.update_follower_model(instance, x)
+            follower_model.optimize()
+            follower_value = follower_model.ObjVal + .5
+            self.update_aux_model(instance, x, follower_value)
+            aux_model.optimize()
+            follower_response = aux_model._vars["y"].X
 
         return follower_value, follower_response, time() - t0
 
@@ -372,153 +387,186 @@ class AlgorithmsManager:
             return True
         
         return False
-
-    def add_gurobi_DD_cuts(self, instance, model, result):
+    
+    def add_DD_cuts(self, instance, model, result):
         t0 = time()
-
         interaction_rows = [i for i in range(instance.Frows) if instance.interaction[i] == "both"]
 
-        # Reset model
-        model.reset()
+        if self.solver == "gurobi":
+            # Reset model
+            model.reset()
 
-        # Create vars
-        alpha = model.addVar(vtype=gp.GRB.BINARY)
-        beta = model.addVars(interaction_rows, vtype=gp.GRB.BINARY)
+            # Create vars
+            alpha = model.addVar(vtype=gp.GRB.BINARY)
+            beta = model.addVars(interaction_rows, vtype=gp.GRB.BINARY)
+            
+            # Alpha-beta relationship
+            model.addConstrs(alpha <= 1 - beta[i] for i in interaction_rows)
+            model.addConstr(alpha >= gp.quicksum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
+
+            # Blocking definition
+            M = {i: sum(min(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in interaction_rows}
+            model.addConstrs(
+                instance.C[i] @ model._vars["x"] >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ result["follower_response"] + 1) 
+                for i in interaction_rows
+            )  
+
+            # Value-function bound
+            M = 1e6
+            model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
         
-        # Alpha-beta relationship
-        model.addConstrs(alpha <= 1 - beta[i] for i in interaction_rows)
-        model.addConstr(alpha >= gp.quicksum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
+        elif self.solver == "cplex":
+            # Reset model
+            model.reset()
 
-        # Blocking definition
-        M = {i: sum(min(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in interaction_rows}
-        model.addConstrs(
-            instance.C[i] @ model._vars["x"] >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ result["follower_response"] + 1) 
-            for i in interaction_rows
-        )  
+            # Create vars
+            alpha = model.addVar(vtype=gp.GRB.BINARY)
+            beta = model.addVars(interaction_rows, vtype=gp.GRB.BINARY)
+            
+            # Alpha-beta relationship
+            model.addConstrs(alpha <= 1 - beta[i] for i in interaction_rows)
+            model.addConstr(alpha >= gp.quicksum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
 
-        # Value-function bound
-        M = 1e6
-        model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
+            # Blocking definition
+            M = {i: sum(min(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in interaction_rows}
+            model.addConstrs(
+                instance.C[i] @ model._vars["x"] >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ result["follower_response"] + 1) 
+                for i in interaction_rows
+            )  
+
+            # Value-function bound
+            M = 1e6
+            model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
 
         return time() - t0  
     
-    def update_gurobi_follower_model(self, instance, x):
-        self.follower_model._constrs.RHS = instance.b - instance.C @ x
-        self.follower_model.reset()
+    def update_follower_model(self, instance, x):
+        if self.solver == "gurobi":
+            self.follower_model._constrs.RHS = instance.b - instance.C @ x
+            self.follower_model.reset()
+        elif self.solver == "cplex":
+            self.follower_model._constrs.RHS = instance.b - instance.C @ x
+            self.follower_model.reset()
     
-    def update_gurobi_aux_model(self, instance, x, objval):
-        self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
-        self.aux_model._constrs["objval"].RHS = objval
-        self.aux_model.reset()
+    def update_aux_model(self, instance, x, objval):
+        if self.solver == "gurobi":
+            self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
+            self.aux_model._constrs["objval"].RHS = objval
+            self.aux_model.reset()
+        elif self.solver == "cplex":
+            self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
+            self.aux_model._constrs["objval"].RHS = objval
+            self.aux_model.reset()
 
-    def get_gurobi_results(self, instance, diagram, model, model_building_runtime):
-        try:
-            objval = model.objVal
-        except:
-            objval = None
-        results = {
-            "instance": instance.name,
-            "nL": instance.Lcols,
-            "nF": instance.Fcols,
-            "mL": len(instance.a),
-            "mF": len(instance.b),
-            "num_threads": self.num_threads,
-            "solver": "gurobi",
-            "approach": None,
-            "max_width": 0 if not diagram else diagram.max_width,
-            "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
-            "lower_bound": model.ObjBound,
-            "best_obj_val": objval,
-            "mip_gap": model.MIPGap,
-            "upper_bound": objval,
-            "bilevel_gap": 100 * round((objval - model.ObjBound) / abs(objval + 1e-6), 6),
-            "width": 0 if not diagram else diagram.width,
-            "total_runtime": None,
-            "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
-            "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
-            "model_build_runtime": round(model_building_runtime),
-            "model_runtime": round(model.runtime),
-            "num_vars": model.numVars,
-            "num_constrs": model.numConstrs,
-            "nodes": None if not diagram else diagram.node_count + 2,
-            "arcs": None if not diagram else diagram.arc_count,
-            "follower_response": None,
-            "num_cuts": model._cbdata.num_cuts,
-            "cuts_runtime": round(model._cbdata.cuts_time),
-            "SEP": model._cbdata.bilevel_free_set_sep_type,
-            "solution": None
-        }
-
-        results["total_runtime"] = sum(value for key, value in results.items() if key in ["compilation_runtime", "model_build_runtime", "model_runtime"])
-
-        # Retrieve vars
-        try:
-            sol = {
-                "x": model._vars["x"].X,
-                "y": model._vars["y"].X
+    def get_results(self, instance, diagram, model, model_building_runtime):
+        ## Gurobi results
+        if self.solver == "gurobi":
+            try:
+                objval = model.objVal
+            except:
+                objval = None
+            results = {
+                "instance": instance.name,
+                "nL": instance.Lcols,
+                "nF": instance.Fcols,
+                "mL": len(instance.a),
+                "mF": len(instance.b),
+                "num_threads": self.num_threads,
+                "solver": "gurobi",
+                "approach": None,
+                "max_width": 0 if not diagram else diagram.max_width,
+                "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
+                "lower_bound": model.ObjBound,
+                "best_obj_val": objval,
+                "mip_gap": model.MIPGap,
+                "upper_bound": objval,
+                "bilevel_gap": 100 * round((objval - model.ObjBound) / abs(objval + 1e-6), 6),
+                "width": 0 if not diagram else diagram.width,
+                "total_runtime": None,
+                "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
+                "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
+                "model_build_runtime": round(model_building_runtime),
+                "model_runtime": round(model.runtime),
+                "num_vars": model.numVars,
+                "num_constrs": model.numConstrs,
+                "nodes": None if not diagram else diagram.node_count + 2,
+                "arcs": None if not diagram else diagram.arc_count,
+                "follower_response": None,
+                "num_cuts": model._cbdata.num_cuts,
+                "cuts_runtime": round(model._cbdata.cuts_time),
+                "SEP": model._cbdata.bilevel_free_set_sep_type,
+                "solution": None
             }
-            if diagram:
-                sol.update({
-                    "pi": {key: value.X for key, value in model._vars["pi"].items()},
-                    "lambda": [key for key, value in model._vars["lambda"].items() if value.X > 0],
-                    "alpha": [key for key, value in model._vars["alpha"].items() if value.X > .5],
-                    "beta": [key for key, value in model._vars["beta"].items() if value.X > .5]
-                })
-        except:
-            sol = dict()
-        results["solution"] = sol
 
-        return results
+            results["total_runtime"] = sum(value for key, value in results.items() if key in ["compilation_runtime", "model_build_runtime", "model_runtime"])
 
-    def get_cplex_results(self, instance, diagram, model, vars, model_building_runtime):
-        try:
-            objval = model.objective_value
-        except:
-            objval = None
-        results = {
-            "instance": instance.name,
-            "nL": instance.Lcols,
-            "nF": instance.Fcols,
-            "mL": len(instance.a),
-            "mF": len(instance.b),
-            "num_threads": self.num_threads,
-            "solver": "gurobi",
-            "approach": None,
-            "max_width": 0 if not diagram else diagram.max_width,
-            "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
-            "lower_bound": model.solve_details.best_bound,
-            "best_obj_val": objval,
-            "mip_gap": model.solve_details.gap,
-            "upper_bound": objval,
-            "bilevel_gap": 100 * round((objval - model.solve_details.best_bound) / abs(objval + 1e-6), 6),
-            "total_runtime": None,
-            "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
-            "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
-            "model_build_runtime": round(model_building_runtime),
-            "model_runtime": round(model.solve_details.time),
-            "num_vars": model.solve_details.columns,
-            "num_constrs": "TODO",
-            "nodes": None if not diagram else diagram.node_count + 2,
-            "arcs": None if not diagram else diagram.arc_count,
-            "follower_response": None,
-            "num_cuts": "TODO",
-            "cuts_runtime": "TODO",
-            "SEP": "TODO",
-            "solution": None
-        }
-        
-        results["total_runtime"] = sum(value for key, value in results.items() if key in ["compilation_runtime", "model_build_runtime", "model_runtime"])
+            # Retrieve vars
+            try:
+                sol = {
+                    "x": model._vars["x"].X,
+                    "y": model._vars["y"].X
+                }
+                if diagram:
+                    sol.update({
+                        "pi": {key: value.X for key, value in model._vars["pi"].items()},
+                        "lambda": [key for key, value in model._vars["lambda"].items() if value.X > 0],
+                        "alpha": [key for key, value in model._vars["alpha"].items() if value.X > .5],
+                        "beta": [key for key, value in model._vars["beta"].items() if value.X > .5]
+                    })
+            except:
+                sol = dict()
+            results["solution"] = sol
 
-        # Retrieve vars
-        try:
-            sol = {
-                "x": [int(i.solution_value + 0.5) for i in vars["x"].values()],
-                "y": [int(i.solution_value + 0.5) for i in vars["y"].values()]
+        ## CPLEX results
+        elif self.solver == "cplex":
+            try:
+                objval = model.objective_value
+            except:
+                objval = None
+            results = {
+                "instance": instance.name,
+                "nL": instance.Lcols,
+                "nF": instance.Fcols,
+                "mL": len(instance.a),
+                "mF": len(instance.b),
+                "num_threads": self.num_threads,
+                "solver": "gurobi",
+                "approach": None,
+                "max_width": 0 if not diagram else diagram.max_width,
+                "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
+                "lower_bound": model.solve_details.best_bound,
+                "best_obj_val": objval,
+                "mip_gap": model.solve_details.gap,
+                "upper_bound": objval,
+                "bilevel_gap": 100 * round((objval - model.solve_details.best_bound) / abs(objval + 1e-6), 6),
+                "total_runtime": None,
+                "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
+                "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
+                "model_build_runtime": round(model_building_runtime),
+                "model_runtime": round(model.solve_details.time),
+                "num_vars": model.solve_details.columns,
+                "num_constrs": "TODO",
+                "nodes": None if not diagram else diagram.node_count + 2,
+                "arcs": None if not diagram else diagram.arc_count,
+                "follower_response": None,
+                "num_cuts": "TODO",
+                "cuts_runtime": "TODO",
+                "SEP": "TODO",
+                "solution": None
             }
-        except:
-            sol = dict()
+            
+            results["total_runtime"] = sum(value for key, value in results.items() if key in ["compilation_runtime", "model_build_runtime", "model_runtime"])
 
-        results["solution"] = vars
+            # Retrieve vars
+            try:
+                sol = {
+                    "x": [int(i.solution_value + 0.5) for i in vars["x"].values()],
+                    "y": [int(i.solution_value + 0.5) for i in vars["y"].values()]
+                }
+            except:
+                sol = dict()
+
+            results["solution"] = vars
 
         return results
 
