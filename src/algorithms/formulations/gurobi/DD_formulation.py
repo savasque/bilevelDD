@@ -91,4 +91,7 @@ def get_model(instance, diagram, incumbent=None):
             for arc in arcs if arc.player == "leader" for i in interaction_rows
         )
 
+        # Strengthening (Fischetti et al, 2017)
+        model.addConstrs((y[j] == val for j, val in instance.known_y_values.items()), names="pre-processing")
+
     return model, time() - t0
