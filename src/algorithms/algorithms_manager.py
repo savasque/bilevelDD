@@ -22,6 +22,7 @@ from .utils.solve_HPR import solve as solve_HPR
 class AlgorithmsManager:
     def __init__(self, instance, num_threads):
         self.logger = logzero.logger
+        self.instance = instance
         self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
         self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
         self.follower_model.Params.OutputFlag = 0
@@ -186,7 +187,7 @@ class AlgorithmsManager:
         best_result["relaxation_obj_val"] = relaxed_model.objval
 
         self.logger.warning(
-            "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - BilevelGap: {bilevel_gap}% - MIPGap: {mip_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width} - Cuts: {num_cuts}".format(**best_result)
+            "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - BilevelGap: {bilevel_gap}% - MIPGap: {mip_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width} - Iters: {iters}".format(**best_result)
         )
         self.logger.info(
             "Runtimes -> Compilation: {compilation_runtime} - Ordering heuristic: {ordering_heuristic_runtime} - Model build: {model_build_runtime} - Model solve: {model_runtime} - Cut generation: {cuts_runtime}".format(**best_result)
@@ -201,10 +202,10 @@ class AlgorithmsManager:
         aux_model = self.aux_model
 
         # Solve models
-        self.update_follower_model(instance, follower_model, x)
+        self.update_follower_model(instance, x)
         follower_model.optimize()
         follower_value = follower_model.ObjVal + .5
-        self.update_aux_model(instance, aux_model, x, follower_value)
+        self.update_aux_model(instance, x, follower_value)
         aux_model.optimize()
         follower_response = aux_model._vars["y"].X
 
@@ -345,14 +346,14 @@ class AlgorithmsManager:
             
         return results, model  
     
-    def update_follower_model(self, instance, model, x):
-        model._constrs.RHS = instance.b - instance.C @ x
-        model.reset()
+    def update_follower_model(self, instance, x):
+        self.follower_model._constrs.RHS = instance.b - instance.C @ x
+        self.follower_model.reset()
     
-    def update_aux_model(self, instance, model, x, objval):
-        model._constrs["HPR"].RHS = instance.b - instance.C @ x
-        model._constrs["objval"].RHS = objval
-        model.reset()
+    def update_aux_model(self, instance, x, objval):
+        self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
+        self.aux_model._constrs["objval"].RHS = objval
+        self.aux_model.reset()
 
     def check_leader_feasibility(self, instance, x, y):
         if instance.Lrows == 0:
