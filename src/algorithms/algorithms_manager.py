@@ -148,7 +148,7 @@ class AlgorithmsManager:
             # Refine model
             else:
                 # Current solution is not bilevel feasible. Update bounds, add a cut and solve again
-                model_build_time += self.add_gurobi_DD_cuts(instance, model, result)
+                model_build_time += self.add_DD_cuts(instance, model, result)
                 if self.solver == "gurobi":
                     model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
                 elif self.solver == "cplex":
@@ -272,9 +272,11 @@ class AlgorithmsManager:
                     model.Params.LazyConstraints = 1
                     callback_data.lazy_cuts = True
                     callback_data.cuts_type = approach.split(":")[1]
-                    self.logger.info("Solving DD refomulation with lazy cuts -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cuts_type, callback_data.bilevel_free_set_sep_type))
+                    self.logger.info("Solving DD refomulation with lazy cuts -> Solver: {} - Time limit: {} s - Cut types: {} - Sep type: {}".format(
+                        self.solver, time_limit, callback_data.cuts_type, callback_data.bilevel_free_set_sep_type
+                    ))
                 else:
-                    self.logger.info("Solving DD refomulation relaxation -> Time limit: {} s".format(round(time_limit)))
+                    self.logger.info("Solving DD refomulation relaxation -> Solver: {} - Time limit: {} s".format(self.solver, round(time_limit)))
                 
                 # Solve DD reformulation
                 model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
