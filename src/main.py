@@ -22,7 +22,7 @@ def run(args):
             instance = parser.build_instance(args.instance_name)
 
             # Initiate AlgorithmsManager
-            algorithms_manager = AlgorithmsManager(instance, args.num_threads)
+            algorithms_manager = AlgorithmsManager(instance, args.num_threads, args.solver)
 
             if args.approach != "iterative":
                 ## One-time compilation approach
@@ -51,6 +51,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--instance_name", "-i", type=str) 
     parser.add_argument("--max_width", "-w", type=int, default=0)
+    parser.add_argument("--solver", "-s", type=str, default="gurobi")
     parser.add_argument("--approach", "-a", type=str)  #lazy_cuts:no_good_cuts, lazy_cuts:INC, disjunctions, iterative, relaxation, write_model
     parser.add_argument("--num_threads", "-t", type=int, default=0)
     args = parser.parse_args()
@@ -93,12 +94,15 @@ if __name__ == "__main__":
     ]
 
     if not args.max_width:
-        args.max_width = 0
+        args.max_width = 25
     if not args.approach:
         # args.approach = "relaxation"
-        # args.approach = "lazy_cuts:INC"
-        args.approach = "iterative"
+        args.approach = "lazy_cuts:INC"
+        # args.approach = "lazy_cuts:no_good_cuts"
+        # args.approach = "iterative"
         # args.approach = "disjunctions"
+    
+    # args.num_threads = 1
     if not args.instance_name:
         for instance in INSTANCES:
             args.instance_name = instance
