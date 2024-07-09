@@ -148,11 +148,10 @@ class AlgorithmsManager:
             # Refine model
             else:
                 # Current solution is not bilevel feasible. Update bounds, add a cut and solve again
+                model_build_time += self.add_gurobi_DD_cuts(instance, model, result)
                 if self.solver == "gurobi":
-                    model_build_time += self.add_gurobi_DD_cuts(instance, model, result)
                     model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
                 elif self.solver == "cplex":
-                    model_build_time += self.add_gurobi_DD_cuts(instance, model, result)
                     model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
                 
                 self.logger.debug("Solving new model with added cuts. Updated time limit: {} s".format(round(solver_time_limit - (time() - t0))))
