@@ -93,16 +93,16 @@ if __name__ == "__main__":
         "miplib/mod01090",
     ]
 
-    if not args.max_width:
-        args.max_width = 25
-    if not args.approach:
-        # args.approach = "relaxation"
-        args.approach = "lazy_cuts:INC"
-        # args.approach = "lazy_cuts:no_good_cuts"
-        # args.approach = "iterative"
-        # args.approach = "disjunctions"
-    
+    # args.max_width = 25
     # args.num_threads = 1
+
+    # if not args.approach:
+    #     # args.approach = "relaxation"
+    #     # args.approach = "lazy_cuts:INC"
+    #     # args.approach = "lazy_cuts:no_good_cuts"
+    #     args.approach = "iterative"
+    #     # args.approach = "disjunctions"
+    
     if not args.instance_name:
         for instance in INSTANCES:
             args.instance_name = instance
