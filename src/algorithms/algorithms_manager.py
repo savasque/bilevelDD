@@ -9,9 +9,12 @@ from classes.decision_diagram import DecisionDiagram
 
 from decision_diagram_manager.decision_diagram_manager import DecisionDiagramManager
 
-from .formulations.gurobi.DD_formulation import get_model
-from .formulations.gurobi.follower_problem import get_model as get_follower_model
-from .formulations.gurobi.aux_problem import get_model as get_aux_model
+from .formulations.gurobi.DD_formulation import get_model as get_gurobi_model
+from .formulations.gurobi.follower_problem import get_model as get_gurobi_follower_model
+from .formulations.gurobi.aux_problem import get_model as get_gurobi_aux_model
+from .formulations.cplex.DD_formulation import get_model as get_cplex_model
+from .formulations.cplex.follower_problem import get_model as get_cplex_follower_model
+from .formulations.cplex.aux_problem import get_model as get_cplex_aux_model
 
 from .gurobi_callback import Callback as GurobiCallback
 from .gurobi_callback import CallbackData as GurobiCallbackData
@@ -20,15 +23,24 @@ from .utils.solve_HPR import solve as solve_HPR
 
 
 class AlgorithmsManager:
-    def __init__(self, instance, num_threads):
+    def __init__(self, instance, num_threads, solver):
         self.logger = logzero.logger
         self.instance = instance
-        self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
-        self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
-        self.follower_model.Params.OutputFlag = 0
-        self.aux_model.Params.OutputFlag = 0
-        self.follower_model.Params.Threads = num_threads
-        self.aux_model.Params.Threads = num_threads
+        self.solver = solver
+        if solver == "gurobi":
+            self.follower_model = get_gurobi_follower_model(instance, [0] * instance.Lcols)
+            self.aux_model = get_gurobi_aux_model(instance, [0] * instance.Lcols, 0)
+            self.follower_model.Params.OutputFlag = 0
+            self.aux_model.Params.OutputFlag = 0
+            self.follower_model.Params.Threads = num_threads
+            self.aux_model.Params.Threads = num_threads
+        elif solver == "cplex":
+            self.follower_model = get_cplex_follower_model(instance, [0] * instance.Lcols)
+            self.aux_model = get_cplex_aux_model(instance, [0] * instance.Lcols, 0)
+            self.follower_model.Params.OutputFlag = 0
+            self.aux_model.Params.OutputFlag = 0
+            self.follower_model.Params.Threads = num_threads
+            self.aux_model.Params.Threads = num_threads
         self.num_threads = num_threads
 
     def one_time_compilation_approach(self, instance, max_width, ordering_heuristic, discard_method, solver_time_limit, approach):
@@ -195,6 +207,108 @@ class AlgorithmsManager:
 
         return best_result
     
+    def solve_DD_reformulation(self, instance, diagram, approach, time_limit, HPR_info):
+        solver = self.solver
+        if solver == "gurobi":
+            model, model_building_runtime = get_gurobi_model(instance, diagram)
+        elif solver == "cplex":
+            model, model_building_runtime = get_cplex_model(instance, diagram)
+
+        # Add cut associated to HPR
+        if solver == "gurobi":
+            model_building_runtime += self.add_gurobi_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
+        elif solver == "cplex":
+            model_building_runtime += self.add_cplex_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
+
+        if approach == "write_model":
+            ######################################################## Write mod model aux file #############################################################
+            from utils.utils import write_modified_model_mps_file, copy_aux_file
+            write_modified_model_mps_file(model, instance, diagram)
+            copy_aux_file(instance, diagram)
+            results = {
+                "instance": instance.name,
+                "nL": instance.Lcols,
+                "nF": instance.Fcols,
+                "mL": len(instance.a),
+                "p": int(instance.name.split("/")[1].split("_")[2][1:]),
+                "rhs_ratio": int(instance.name.split("/")[1].split("_")[3][1:]),
+                "ddmodel": None,
+                "approach": None,
+                "max_width": diagram.max_width,
+                "ordering_heuristic": None ,
+                "lower_bound": None,
+                "best_obj_val": None,
+                "mip_gap": None,
+                "upper_bound": None,
+                "bilevel_gap": None,
+                "width": 0 if not diagram else diagram.width,
+                "total_runtime": None,
+                "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
+                "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
+                "model_build_runtime": round(model_building_runtime),
+                "model_runtime": None,
+                "num_vars": model.numVars,
+                "num_constrs": model.numConstrs,
+                "nodes": None if not diagram else diagram.node_count,
+                "arcs": None if not diagram else diagram.arc_count,
+                "follower_response": None,
+                "SEP": None,
+                "solution": None
+            }
+            ################################################################## * ##########################################################################
+        
+        elif approach == "relaxation" or approach.split(":")[0] == "lazy_cuts":
+            if solver == "gurobi":
+                callback_data = GurobiCallbackData(instance)
+                callback_func = partial(GurobiCallback().callback, cbdata=callback_data)
+                model._cbdata = callback_data
+                if approach.split(":")[0] == "lazy_cuts":
+                    model.Params.LazyConstraints = 1
+                    callback_data.lazy_cuts = True
+                    callback_data.cuts_type = approach.split(":")[1]
+                    self.logger.info("Solving DD refomulation with lazy cuts -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cuts_type, callback_data.bilevel_free_set_sep_type))
+                else:
+                    self.logger.info("Solving DD refomulation relaxation -> Time limit: {} s".format(round(time_limit)))
+                
+                # Solve DD reformulation
+                model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
+                model.Params.Threads = self.num_threads
+                model.Params.NumericFocus = 1
+                model.optimize(lambda model, where: callback_func(model, where))
+                self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
+                    model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
+                ))
+
+                results = self.get_gurobi_results(instance, diagram, model, model_building_runtime)
+            
+            elif solver == "cplex":
+                callback_data = GurobiCallbackData(instance)
+                callback_func = partial(GurobiCallback().callback, cbdata=callback_data)
+                model._cbdata = callback_data
+                if approach.split(":")[0] == "lazy_cuts":
+                    model.Params.LazyConstraints = 1
+                    callback_data.lazy_cuts = True
+                    callback_data.cuts_type = approach.split(":")[1]
+                    self.logger.info("Solving DD refomulation with lazy cuts -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cuts_type, callback_data.bilevel_free_set_sep_type))
+                else:
+                    self.logger.info("Solving DD refomulation relaxation -> Time limit: {} s".format(round(time_limit)))
+                
+                # Solve DD reformulation
+                model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
+                model.Params.Threads = self.num_threads
+                model.Params.NumericFocus = 1
+                model.optimize(lambda model, where: callback_func(model, where))
+                self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
+                    model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
+                ))
+
+                results = self.get_gurobi_results(instance, diagram, model, model_building_runtime)
+        
+        else:
+            raise ValueError("Invalid approach: {}".format(approach))
+            
+        return results, model
+
     def get_follower_response(self, instance, x):
         t0 = time()
 
@@ -202,10 +316,10 @@ class AlgorithmsManager:
         aux_model = self.aux_model
 
         # Solve models
-        self.update_follower_model(instance, x)
+        self.update_gurobi_follower_model(instance, x)
         follower_model.optimize()
         follower_value = follower_model.ObjVal + .5
-        self.update_aux_model(instance, x, follower_value)
+        self.update_gurobi_aux_model(instance, x, follower_value)
         aux_model.optimize()
         follower_response = aux_model._vars["y"].X
 
@@ -250,7 +364,16 @@ class AlgorithmsManager:
 
         return HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, runtime
     
-    def add_DD_cuts(self, instance, model, result):
+    def check_leader_feasibility(self, instance, x, y):
+        if instance.Lrows == 0:
+            return True
+        
+        if np.all([instance.A @ x + instance.B @ y <= instance.a]):
+            return True
+        
+        return False
+
+    def add_gurobi_DD_cuts(self, instance, model, result):
         t0 = time()
 
         interaction_rows = [i for i in range(instance.Frows) if instance.interaction[i] == "both"]
@@ -277,97 +400,17 @@ class AlgorithmsManager:
         M = 1e6
         model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
 
-        return time() - t0
-
-    def solve_DD_reformulation(self, instance, diagram, approach, time_limit, HPR_info):
-        model, model_building_runtime = get_model(instance, diagram)
-
-        # Add cut associated to HPR
-        model_building_runtime += self.add_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
-
-        if approach == "write_model":
-            ######################################################## Write mod model aux file #############################################################
-            from utils.utils import write_modified_model_mps_file, copy_aux_file
-            write_modified_model_mps_file(model, instance, diagram)
-            copy_aux_file(instance, diagram)
-            results = {
-                "instance": instance.name,
-                "nL": instance.Lcols,
-                "nF": instance.Fcols,
-                "mL": len(instance.a),
-                "p": int(instance.name.split("/")[1].split("_")[2][1:]),
-                "rhs_ratio": int(instance.name.split("/")[1].split("_")[3][1:]),
-                "ddmodel": None,
-                "approach": None,
-                "max_width": diagram.max_width,
-                "ordering_heuristic": None ,
-                "lower_bound": None,
-                "best_obj_val": None,
-                "mip_gap": None,
-                "upper_bound": None,
-                "bilevel_gap": None,
-                "width": 0 if not diagram else diagram.width,
-                "total_runtime": None,
-                "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
-                "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
-                "model_build_runtime": round(model_building_runtime),
-                "model_runtime": None,
-                "num_vars": model.numVars,
-                "num_constrs": model.numConstrs,
-                "nodes": None if not diagram else diagram.node_count,
-                "arcs": None if not diagram else diagram.arc_count,
-                "follower_response": None,
-                "SEP": None,
-                "solution": None
-            }
-            ################################################################## * ##########################################################################
-        
-        elif approach == "relaxation" or approach.split(":")[0] == "lazy_cuts":
-            callback_data = GurobiCallbackData(instance)
-            callback_func = partial(GurobiCallback().callback, cbdata=callback_data)
-            model._cbdata = callback_data
-            if approach.split(":")[0] == "lazy_cuts":
-                model.Params.LazyConstraints = 1
-                callback_data.lazy_cuts = True
-                callback_data.cuts_type = approach.split(":")[1]
-                self.logger.info("Solving DD refomulation with lazy cuts -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cuts_type, callback_data.bilevel_free_set_sep_type))
-            else:
-                self.logger.info("Solving DD refomulation relaxation -> Time limit: {} s".format(round(time_limit)))
-            
-            # Solve DD reformulation
-            model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
-            model.Params.Threads = self.num_threads
-            model.Params.NumericFocus = 1
-            model.optimize(lambda model, where: callback_func(model, where))
-            self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
-                model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
-            ))
-
-            results = self.get_gurobi_results(instance, diagram, model, model_building_runtime)
-        
-        else:
-            raise ValueError("Invalid approach: {}".format(approach))
-            
-        return results, model  
+        return time() - t0  
     
-    def update_follower_model(self, instance, x):
+    def update_gurobi_follower_model(self, instance, x):
         self.follower_model._constrs.RHS = instance.b - instance.C @ x
         self.follower_model.reset()
     
-    def update_aux_model(self, instance, x, objval):
+    def update_gurobi_aux_model(self, instance, x, objval):
         self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
         self.aux_model._constrs["objval"].RHS = objval
         self.aux_model.reset()
 
-    def check_leader_feasibility(self, instance, x, y):
-        if instance.Lrows == 0:
-            return True
-        
-        if np.all([instance.A @ x + instance.B @ y <= instance.a]):
-            return True
-        
-        return False
-    
     def get_gurobi_results(self, instance, diagram, model, model_building_runtime):
         try:
             objval = model.objVal
@@ -380,6 +423,7 @@ class AlgorithmsManager:
             "mL": len(instance.a),
             "mF": len(instance.b),
             "num_threads": self.num_threads,
+            "solver": "gurobi",
             "approach": None,
             "max_width": 0 if not diagram else diagram.max_width,
             "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
@@ -402,7 +446,7 @@ class AlgorithmsManager:
             "num_cuts": model._cbdata.num_cuts,
             "cuts_runtime": round(model._cbdata.cuts_time),
             "SEP": model._cbdata.bilevel_free_set_sep_type,
-            "solution": None,
+            "solution": None
         }
 
         results["total_runtime"] = sum(value for key, value in results.items() if key in ["compilation_runtime", "model_build_runtime", "model_runtime"])
@@ -425,50 +469,56 @@ class AlgorithmsManager:
         results["solution"] = sol
 
         return results
-    
+
     def get_cplex_results(self, instance, diagram, model, vars, model_building_runtime):
         try:
             objval = model.objective_value
         except:
             objval = None
         results = {
+            "instance": instance.name,
+            "nL": instance.Lcols,
+            "nF": instance.Fcols,
+            "mL": len(instance.a),
+            "mF": len(instance.b),
+            "num_threads": self.num_threads,
+            "solver": "gurobi",
             "approach": None,
-            "compilation_method": diagram.compilation_method,
-            "max_width": diagram.max_width,
-            "ordering_heuristic": diagram.ordering_heuristic,
+            "max_width": 0 if not diagram else diagram.max_width,
+            "ordering_heuristic": None if not diagram else diagram.ordering_heuristic,
             "lower_bound": model.solve_details.best_bound,
             "best_obj_val": objval,
             "mip_gap": model.solve_details.gap,
-            "upper_bound": float("inf"),
-            "bilevel_gap": None,
+            "upper_bound": objval,
+            "bilevel_gap": 100 * round((objval - model.solve_details.best_bound) / abs(objval + 1e-6), 6),
             "total_runtime": None,
-            "data_load_runtime": round(instance.load_runtime),
-            "compilation_runtime": round(diagram.compilation_runtime),
-            "reduce_algorithm_runtime": round(diagram.reduce_algorithm_runtime),
-            "sampling_runtime": round(diagram.sampling_runtime),
+            "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
+            "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
             "model_build_runtime": round(model_building_runtime),
             "model_runtime": round(model.solve_details.time),
             "num_vars": model.solve_details.columns,
             "num_constrs": "TODO",
-            "num_nodes": diagram.node_count,
-            "num_arcs": diagram.arc_count,
-            "num_node_merges": diagram.num_merges
+            "nodes": None if not diagram else diagram.node_count + 2,
+            "arcs": None if not diagram else diagram.arc_count,
+            "follower_response": None,
+            "num_cuts": "TODO",
+            "cuts_runtime": "TODO",
+            "SEP": "TODO",
+            "solution": None
         }
-        results["instance"] = instance.name
-        results["width"] = diagram.width
-        results["initial_width"] = diagram.initial_width
+        
+        results["total_runtime"] = sum(value for key, value in results.items() if key in ["compilation_runtime", "model_build_runtime", "model_runtime"])
+
+        # Retrieve vars
         try:
-            vars = {
+            sol = {
                 "x": [int(i.solution_value + 0.5) for i in vars["x"].values()],
-                "y": [int(i.solution_value + 0.5) for i in vars["y"].values()],
-                "w": [key for key, value in vars["w"].items() if value.solution_value > 0],
+                "y": [int(i.solution_value + 0.5) for i in vars["y"].values()]
             }
         except:
-            vars = dict()
-        results["vars"] = vars
+            sol = dict()
 
-        # Compute upper bound
-        results["upper_bound"], results["follower_response"] = self.get_upper_bound(instance, vars)
+        results["solution"] = vars
 
         return results
 
