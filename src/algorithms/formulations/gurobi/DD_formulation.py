@@ -92,6 +92,6 @@ def get_model(instance, diagram, incumbent=None):
         )
 
         # Strengthening (Fischetti et al, 2017)
-        model.addConstrs((y[j] == val for j, val in instance.known_y_values.items()), names="pre-processing")
+        model.addConstrs((y[j] == val for j, val in instance.known_y_values.items()), name="pre-processing")
 
     return model, time() - t0
