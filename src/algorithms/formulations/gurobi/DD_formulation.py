@@ -80,10 +80,11 @@ def get_model(instance, diagram, incumbent=None):
 
         # Gamma bounds
         M = 1e6
-        model.addConstrs(gamma[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
+        model.addConstrs(lamda[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
 
         # Alpha-beta relationship
         model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_rows) for arc in arcs if arc.player == "leader")
+        model.addConstrs(alpha[arc.id] >= beta[arc.id, i] for i in interaction_rows for arc in arcs if arc.player == "leader")
 
         # Blocking definition
         M = {i: sum(min(C[i][j], 0) for j in range(Lcols)) for i in interaction_rows}

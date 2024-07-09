@@ -263,6 +263,7 @@ class AlgorithmsManager:
         beta = model.addVars(interaction_rows, vtype=gp.GRB.BINARY)
         
         # Alpha-beta relationship
+        model.addConstrs(alpha <= 1 - beta[i] for i in interaction_rows)
         model.addConstr(alpha >= gp.quicksum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
 
         # Blocking definition
@@ -336,8 +337,11 @@ class AlgorithmsManager:
             # Solve DD reformulation
             model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
             model.Params.Threads = self.num_threads
+            model.Params.NumericFocus = 1
             model.optimize(lambda model, where: callback_func(model, where))
-            self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(model.objBound, model.MIPGap, round(model.runtime)))
+            self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
+                model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
+            ))
 
             results = self.get_gurobi_results(instance, diagram, model, model_building_runtime)
         
@@ -413,7 +417,6 @@ class AlgorithmsManager:
                 sol.update({
                     "pi": {key: value.X for key, value in model._vars["pi"].items()},
                     "lambda": [key for key, value in model._vars["lambda"].items() if value.X > 0],
-                    "gamma": [key for key, value in model._vars["gamma"].items() if value.X > 0],
                     "alpha": [key for key, value in model._vars["alpha"].items() if value.X > .5],
                     "beta": [key for key, value in model._vars["beta"].items() if value.X > .5]
                 })
