@@ -472,7 +472,7 @@ class AlgorithmsManager:
                 "nF": instance.Fcols,
                 "mL": len(instance.a),
                 "mF": len(instance.b),
-                "num_threads": self.num_threads,
+                "num_threads": "inf" if self.num_threads == 0 else self.num_threads,
                 "solver": "gurobi",
                 "approach": None,
                 "max_width": 0 if not diagram else diagram.max_width,
