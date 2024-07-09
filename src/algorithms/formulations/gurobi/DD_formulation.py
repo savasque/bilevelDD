@@ -54,7 +54,6 @@ def get_model(instance, diagram, incumbent=None):
 
         pi = model.addVars([node.id for node in nodes], lb=-gp.GRB.INFINITY, name="pi")
         lamda = model.addVars([arc.id for arc in arcs if arc.player == "leader"], name="lambda")
-        gamma = model.addVars([arc.id for arc in arcs if arc.player == "leader"], name="gamma")
         alpha = model.addVars([arc.id for arc in arcs if arc.player == "leader"], vtype=gp.GRB.BINARY, name="alpha")
         beta = model.addVars([arc.id for arc in arcs if arc.player == "leader"], interaction_rows, vtype=gp.GRB.BINARY, name="beta")
 
@@ -62,7 +61,6 @@ def get_model(instance, diagram, incumbent=None):
             {
                 "pi": pi,
                 "lambda": lamda,
-                "gamma": gamma,
                 "alpha": alpha,
                 "beta": beta
             }
