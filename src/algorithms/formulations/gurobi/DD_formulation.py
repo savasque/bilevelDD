@@ -76,7 +76,7 @@ def get_model(instance, diagram, incumbent=None):
         # Strong duality
         model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
 
-        # Gamma bounds
+        # Capacity constraints
         M = 1e6
         model.addConstrs(lamda[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
 
