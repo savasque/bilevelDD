@@ -15,6 +15,7 @@ class CallbackData:
         self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
         self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
         self.follower_model.Params.OutputFlag = 0
+        self.aux_model.Params.OutputFlag = 0
         self.root_node_bound = None
         self.lazy_cuts = False
         self.was_root_node_visited = False

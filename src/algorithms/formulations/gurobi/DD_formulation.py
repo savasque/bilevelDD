@@ -88,7 +88,7 @@ def get_model(instance, diagram, incumbent=None):
         M = {i: sum(min(C[i][j], 0) for j in range(Lcols)) for i in interaction_rows}
         model.addConstrs(
             C[i] @ x >= M[i] + beta[arc.id, i] * (-M[i] + instance.b[i] - arc.tail.state[i] + 1) 
-            for arc in arcs if arc.player == "leader" for i in interaction_rows
+            for arc in arcs for i in interaction_rows if arc.player == "leader"
         )
 
         # Strengthening (Fischetti et al, 2017)

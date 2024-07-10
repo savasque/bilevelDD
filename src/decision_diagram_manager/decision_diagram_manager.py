@@ -9,7 +9,7 @@ from classes.node import Node
 from classes.arc import Arc
 from classes.decision_diagram import DecisionDiagram
 
-from algorithms.utils.solve_HPR import solve as solve_HPR
+from algorithms.utils.solve_HPR_gurobi import solve as solve_HPR
 
 from .compilation_methods.follower_then_full_leader import FollowerThenLeaderCompiler
 from .compilation_methods.follower_then_leader import FollowerThenCompressedLeaderCompiler

@@ -4,6 +4,7 @@ import numpy as np
 from functools import partial
 
 import gurobipy as gp
+import cplex
 
 from classes.decision_diagram import DecisionDiagram
 
@@ -18,8 +19,9 @@ from .formulations.cplex.aux_problem import get_model as get_cplex_aux_model
 
 from .gurobi_callback import Callback as GurobiCallback
 from .gurobi_callback import CallbackData as GurobiCallbackData
+from .cplex_callback import CplexCallback
 
-from .utils.solve_HPR import solve as solve_HPR
+from .utils.solve_HPR_gurobi import solve as solve_HPR
 
 
 class AlgorithmsManager:
@@ -37,10 +39,11 @@ class AlgorithmsManager:
         elif solver == "cplex":
             self.follower_model = get_cplex_follower_model(instance, [0] * instance.Lcols)
             self.aux_model = get_cplex_aux_model(instance, [0] * instance.Lcols, 0)
-            self.follower_model.Params.OutputFlag = 0
-            self.aux_model.Params.OutputFlag = 0
-            self.follower_model.Params.Threads = num_threads
-            self.aux_model.Params.Threads = num_threads
+            self.follower_model.context.cplex_parameters.threads = num_threads
+            self.aux_model.context.cplex_parameters.threads = num_threads
+            self.follower_model.parameters.mip.display.set(0)
+            self.aux_model.parameters.mip.display.set(0)
+
         self.num_threads = num_threads
 
     def one_time_compilation_approach(self, instance, max_width, ordering_heuristic, discard_method, solver_time_limit, approach):
@@ -84,10 +87,11 @@ class AlgorithmsManager:
                 result["opt"] = 0
 
             # Compute continuous relaxation bound
-            relaxed_model = model.relax()
-            relaxed_model.Params.OutputFlag = 0
-            relaxed_model.optimize()
-            result["relaxation_obj_val"] = relaxed_model.objval
+            if self.solver == "gurobi":
+                relaxed_model = model.relax()
+                relaxed_model.Params.OutputFlag = 0
+                relaxed_model.optimize()
+                result["relaxation_obj_val"] = relaxed_model.objval
             
             self.logger.warning(
                 "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - BilevelGap: {bilevel_gap}% - MIPGap: {mip_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width} - Cuts: {num_cuts}".format(**result)
@@ -135,7 +139,10 @@ class AlgorithmsManager:
 
         self.logger.info("Initial bounds -> LB: {lower_bound} - UB: {upper_bound} - Bilevel gap: {bilevel_gap}%".format(**result))
 
-        model.Params.OutputFlag = 0
+        if self.solver == "gurobi":
+            model.Params.OutputFlag = 0
+        elif self.solver == "cplex":
+            model.parameters.mip.display.set(0)
         best_result = result
 
         # Main iteration
@@ -152,7 +159,7 @@ class AlgorithmsManager:
                 if self.solver == "gurobi":
                     model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
                 elif self.solver == "cplex":
-                    model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
+                    model.parameters.timelimit = max(solver_time_limit - (time() - t0), 0)
                 
                 self.logger.debug("Solving new model with added cuts. Updated time limit: {} s".format(round(solver_time_limit - (time() - t0))))
 
@@ -160,14 +167,19 @@ class AlgorithmsManager:
                     model.optimize()
                     model_time += model.runtime
                 elif self.solver == "cplex":
-                    model.optimize()
-                    model_time += model.runtime
+                    model.solve(clean_before_solve=True)
+                    model_time += model.solve_details.time
+                    model.status = model.solve_status.value
 
                 # Solved model
                 if model.status == 2:
-                    self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.runtime)))
+                    if self.solver == "gurobi":
+                        self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.runtime)))
+                    elif self.solver == "cplex":
+                        self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.solve_details.time)))
+                    
                     result = self.get_results(instance, diagram, model, 0)
-                
+                    
                     # Update bounds
                     cuts_time += self.update_upper_bound(instance, result)
 
@@ -202,10 +214,14 @@ class AlgorithmsManager:
         best_result["HPR_runtime"] = round(HPR_runtime)
 
         # Compute continuous relaxation bound
-        relaxed_model = model.relax()
-        relaxed_model.Params.OutputFlag = 0
-        relaxed_model.optimize()
-        best_result["relaxation_obj_val"] = relaxed_model.objval
+        if self.solver == "gurobi":
+            relaxed_model = model.relax()
+            relaxed_model.Params.OutputFlag = 0
+            relaxed_model.optimize()
+            best_result["relaxation_obj_val"] = relaxed_model.objval
+        elif self.solver == "cplex":
+            model.solve(relax=True)
+            best_result["relaxation_obj_val"] = model.objective_value
 
         self.logger.warning(
             "Results for {instance} -> LB: {lower_bound} - UB: {upper_bound} - BilevelGap: {bilevel_gap}% - MIPGap: {mip_gap} - HPR: {HPR} - Runtime: {total_runtime} - DDWidth: {width} - Iters: {iters}".format(**best_result)
@@ -290,27 +306,29 @@ class AlgorithmsManager:
                 results = self.get_results(instance, diagram, model, model_building_runtime)
             
             elif solver == "cplex":
-                callback_data = GurobiCallbackData(instance)
-                callback_func = partial(GurobiCallback().callback, cbdata=callback_data)
-                model._cbdata = callback_data
+                callback = CplexCallback(instance, model)
+                contextmask = 0
+                model.callback = callback
                 if approach.split(":")[0] == "lazy_cuts":
-                    model.Params.LazyConstraints = 1
-                    callback_data.lazy_cuts = True
-                    callback_data.cuts_type = approach.split(":")[1]
-                    self.logger.info("Solving DD refomulation with lazy cuts -> Time limit: {} s - Cut types: {} - Sep type: {}".format(time_limit, callback_data.cuts_type, callback_data.bilevel_free_set_sep_type))
+                    contextmask |= cplex.callbacks.Context.id.candidate 
+                    model.cplex.set_callback(callback, contextmask)
+                    callback.cuts_type = approach.split(":")[1]                   
+                    self.logger.info("Solving DD refomulation with lazy cuts -> Solver: {} - Time limit: {} s - Cut types: {} - Sep type: {}".format(
+                        self.solver, time_limit, callback.cuts_type, callback.bilevel_free_set_sep_type
+                    ))
                 else:
-                    self.logger.info("Solving DD refomulation relaxation -> Time limit: {} s".format(round(time_limit)))
+                    self.logger.info("Solving DD refomulation relaxation -> Solver: {} - Time limit: {} s".format(solver, round(time_limit)))
                 
                 # Solve DD reformulation
-                model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
-                model.Params.Threads = self.num_threads
-                model.Params.NumericFocus = 1
-                model.optimize(lambda model, where: callback_func(model, where))
+                model.parameters.timelimit = max(time_limit - model_building_runtime, 0)
+                model.parameters.threads = self.num_threads
+                model.parameters.mip.tolerances.mipgap = 1e-8
+                model.solve(clean_before_solve=True)
                 self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
-                    model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
+                    model.solve_details.best_bound if model.solve_details.gap > 1e-6 else model.objective_value, model.solve_details.gap, round(model.solve_details.time)
                 ))
 
-                results = self.get_gurobi_results(instance, diagram, model, model_building_runtime)
+                results = self.get_results(instance, diagram, model, model_building_runtime)
         
         else:
             raise ValueError("Invalid approach: {}".format(approach))
@@ -333,11 +351,11 @@ class AlgorithmsManager:
             follower_response = aux_model._vars["y"].X
         elif self.solver == "cplex":
             self.update_follower_model(instance, x)
-            follower_model.optimize()
-            follower_value = follower_model.ObjVal + .5
+            follower_model.solve(clean_before_solve=True)
+            follower_value = follower_model.objective_value + .5
             self.update_aux_model(instance, x, follower_value)
-            aux_model.optimize()
-            follower_response = aux_model._vars["y"].X
+            aux_model.solve(clean_before_solve=True)
+            follower_response = np.array([aux_model._vars["y"][j].solution_value for j in range(instance.Fcols)])
 
         return follower_value, follower_response, time() - t0
 
@@ -417,27 +435,24 @@ class AlgorithmsManager:
             model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
         
         elif self.solver == "cplex":
-            # Reset model
-            model.reset()
-
             # Create vars
-            alpha = model.addVar(vtype=gp.GRB.BINARY)
-            beta = model.addVars(interaction_rows, vtype=gp.GRB.BINARY)
+            alpha = model.binary_var()
+            beta = model.binary_var_dict(interaction_rows)
             
             # Alpha-beta relationship
-            model.addConstrs(alpha <= 1 - beta[i] for i in interaction_rows)
-            model.addConstr(alpha >= gp.quicksum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
+            model.add_constraints_(alpha <= 1 - beta[i] for i in interaction_rows)
+            model.add_constraint_(alpha >= model.sum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
 
             # Blocking definition
             M = {i: sum(min(instance.C[i][j], 0) for j in range(instance.Lcols)) for i in interaction_rows}
-            model.addConstrs(
-                instance.C[i] @ model._vars["x"] >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ result["follower_response"] + 1) 
+            model.add_constraints_(
+                model.sum(instance.C[i][j] * model._vars["x"][j] for j in range(instance.Lcols)) >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ result["follower_response"] + 1) 
                 for i in interaction_rows
             )  
 
             # Value-function bound
             M = 1e6
-            model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
+            model.add_constraint_(model.sum(instance.d[j] * model._vars["y"][j] for j in range(instance.Fcols)) <= result["follower_value"] + M * (1 - alpha))
 
         return time() - t0  
     
@@ -446,8 +461,8 @@ class AlgorithmsManager:
             self.follower_model._constrs.RHS = instance.b - instance.C @ x
             self.follower_model.reset()
         elif self.solver == "cplex":
-            self.follower_model._constrs.RHS = instance.b - instance.C @ x
-            self.follower_model.reset()
+            for i in range(instance.Frows):
+                self.follower_model._constrs[i].rhs = float(instance.b[i] - instance.C[i] @ x)
     
     def update_aux_model(self, instance, x, objval):
         if self.solver == "gurobi":
@@ -455,9 +470,9 @@ class AlgorithmsManager:
             self.aux_model._constrs["objval"].RHS = objval
             self.aux_model.reset()
         elif self.solver == "cplex":
-            self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
-            self.aux_model._constrs["objval"].RHS = objval
-            self.aux_model.reset()
+            for i in range(instance.Frows):
+                self.aux_model._constrs["HPR"][i].rhs = float(instance.b[i] - instance.C[i] @ x)
+            self.aux_model._constrs["objval"].rhs = objval
 
     def get_results(self, instance, diagram, model, model_building_runtime):
         ## Gurobi results
@@ -540,6 +555,7 @@ class AlgorithmsManager:
                 "mip_gap": model.solve_details.gap,
                 "upper_bound": objval,
                 "bilevel_gap": 100 * round((objval - model.solve_details.best_bound) / abs(objval + 1e-6), 6),
+                "width": 0 if not diagram else diagram.width,
                 "total_runtime": None,
                 "compilation_runtime": 0 if not diagram else round(diagram.compilation_runtime),
                 "ordering_heuristic_runtime": 0 if not diagram else round(diagram.ordering_heuristic_runtime),
@@ -550,9 +566,9 @@ class AlgorithmsManager:
                 "nodes": None if not diagram else diagram.node_count + 2,
                 "arcs": None if not diagram else diagram.arc_count,
                 "follower_response": None,
-                "num_cuts": "TODO",
-                "cuts_runtime": "TODO",
-                "SEP": "TODO",
+                "num_cuts": model.callback.num_cuts,
+                "cuts_runtime": round(model.callback.cuts_time),
+                "SEP": model.callback.bilevel_free_set_sep_type,
                 "solution": None
             }
             
@@ -561,13 +577,13 @@ class AlgorithmsManager:
             # Retrieve vars
             try:
                 sol = {
-                    "x": [int(i.solution_value + 0.5) for i in vars["x"].values()],
-                    "y": [int(i.solution_value + 0.5) for i in vars["y"].values()]
+                    "x": np.array([int(i.solution_value + 0.5) for i in model._vars["x"].values()]),
+                    "y": np.array([int(i.solution_value + 0.5) for i in model._vars["y"].values()])
                 }
             except:
                 sol = dict()
 
-            results["solution"] = vars
+            results["solution"] = sol
 
         return results
 

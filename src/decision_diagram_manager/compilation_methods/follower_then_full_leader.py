@@ -8,7 +8,7 @@ from classes.node import Node
 from classes.arc import Arc
 from decision_diagram_manager.operations import Operations
 
-from algorithms.utils.solve_HPR import solve as solve_HPR
+from algorithms.utils.solve_HPR_gurobi import solve as solve_HPR
 
 class FollowerThenLeaderCompiler:
     def __init__(self, logger):

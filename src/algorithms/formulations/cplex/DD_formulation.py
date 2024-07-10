@@ -2,7 +2,7 @@ from time import time
 from docplex.mp.model import Model
 import numpy as np
 
-from algorithms.utils.solve_HPR import solve as solve_HPR
+from algorithms.utils.solve_HPR_gurobi import solve as solve_HPR
 
 def get_model(instance, diagram):
     Lcols = instance.Lcols
@@ -51,7 +51,7 @@ def get_model(instance, diagram):
         interaction_rows = [i for i in range(instance.Frows) if instance.interaction[i] == "both"]
 
         pi = model.continuous_var_dict([node.id for node in nodes], lb=-model.infinity, name="pi")
-        gamma = model.continuous_var_dict([arc.id for arc in arcs if arc.player == "leader"], name="gamma")
+        lamda = model.continuous_var_dict([arc.id for arc in arcs if arc.player == "leader"], name="lambda")
         alpha = model.binary_var_dict([arc.id for arc in arcs if arc.player == "leader"], name="alpha")
         beta = model.binary_var_dict([(arc.id, idx) for arc in arcs for idx in interaction_rows if arc.player == "leader"], name="beta")
 
@@ -60,27 +60,27 @@ def get_model(instance, diagram):
 
         # Dual feasibility
         model.add_constraints_((pi[arc.tail.id] - pi[arc.head.id] <= arc.cost for arc in arcs if arc.player in ["follower", None]), names="dual-feas-0")
-        model.add_constraints_((pi[arc.tail.id] - pi[arc.head.id] - gamma[arc.id] <= 0 for arc in arcs if arc.player == "leader"), names="dual-feas-1")
+        model.add_constraints_((pi[arc.tail.id] - pi[arc.head.id] - lamda[arc.id] <= 0 for arc in arcs if arc.player == "leader"), names="dual-feas-1")
 
         # Strong duality
-        model.add_constraint_(pi[root_node.id] == model.sum(arc.cost * w[arc.id] for arc in arcs), ctname="strong-dual")
         model.add_constraint_(pi[sink_node.id] == 0, ctname="strong-dual-sink")
 
         # Gamma bounds
-        M = solve_HPR(instance, obj="follower", sense="maximize")[0] - solve_HPR(instance, obj="follower", sense="minimize")[0]
-        model.add_constraints_((gamma[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader"), names="gamma-bounds")
+        M = 1e6
+        model.add_constraints_((lamda[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader"), names="gamma-bounds")
 
         # Alpha-beta relationship
-        model.add_constraints_((alpha[arc.id] <= model.sum(beta[arc.id, i] for i in interaction_indices) for arc in arcs if arc.player == "leader"), names="alpha-beta")
+        model.add_constraints_((alpha[arc.id] <= model.sum(beta[arc.id, i] for i in interaction_rows) for arc in arcs if arc.player == "leader"), names="alpha-beta1")
+        model.add_constraints_((alpha[arc.id] >= beta[arc.id, i] for i in interaction_rows for arc in arcs if arc.player == "leader"), names="alpha-beta2")
 
         # Blocking definition
-        M_blocking = {i: -sum(min(C[i][j], 0) for j in range(Lcols)) for i in range(Frows)}
+        M = {i: sum(min(C[i][j], 0) for j in range(Lcols)) for i in interaction_rows}
         model.add_constraints_(
-            (model.sum(C[i][j] * x[j] for j in range(Lcols)) >= -M_blocking[i] + beta[arc.id, i] * (M_blocking[i] + arc.block_values[i]) for arc in arcs for i in interaction_indices if arc.player == "leader"),
-            names="blocking-def"
+            (model.sum(C[i][j] * x[j] for j in range(Lcols)) >= M[i] + beta[arc.id, i] * (-M[i] + instance.b[i] - arc.tail.state[i] + 1) 
+            for arc in arcs for i in interaction_rows if arc.player == "leader"), names="blocking-def"
         )
 
         # Strengthening (Fischetti et al, 2017)
         model.add_constraints_((y[j] == val for j, val in instance.known_y_values.items()), names="pre-processing")
 
-    return model, vars, time() - t0
+    return model, time() - t0

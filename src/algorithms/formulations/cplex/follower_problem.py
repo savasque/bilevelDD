@@ -1,20 +1,25 @@
-import gurobipy as gp
+from docplex.mp.model import Model
 
 def get_model(instance, x, sense="minimize"):
-    model = gp.Model()
-    model.Params.OutputFlag = 0
+    model = Model(log_output=False, float_precision=6)
 
-    y = model.addMVar(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+    y = model.binary_var_dict(instance.Fcols, name="y")
     model._vars = {"y": y}
 
-    constrs = model.addConstr(
-        (instance.D @ y <= instance.b - instance.C @ x), 
-         name="FollowerHPR"
-    )
+    constrs = {
+        i: model.add_constraint(
+            model.sum(instance.D[i][j] * y[j] for j in range(instance.Fcols))
+            <= instance.b[i] - instance.C[i] @ x
+        )
+        for i in range(instance.Frows)
+    }
     model._constrs = constrs
 
-    obj = instance.d @ y
-
-    model.setObjective(obj, sense=gp.GRB.MINIMIZE if sense == "minimize" else gp.GRB.MAXIMIZE)
+    obj = model.sum(instance.d[j] * y[j] for j in range(instance.Fcols))
+    
+    if sense == "minimize":
+        model.minimize(obj)
+    else:
+        model.maximize(obj)
 
     return model
