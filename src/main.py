@@ -14,7 +14,7 @@ def run(args):
     # Parser instantiation
     parser = Parser()
 
-    file_name = "w{}|{}".format(args.max_width, args.approach)
+    file_name = "{}|w{}|{}".format(args.solver, args.max_width, args.approach)
 
     for discard_method in constants.DISCARD_METHOD:
         for ordering_heuristic in constants.ORDERING_HEURISTIC: 
@@ -93,15 +93,16 @@ if __name__ == "__main__":
         "miplib/mod01090",
     ]
 
+    # ## Testing
+    # args.solver = "cplex"
     # args.max_width = 25
-    # args.num_threads = 1
+    # # args.num_threads = 1
 
-    # if not args.approach:
-    #     # args.approach = "relaxation"
-    #     # args.approach = "lazy_cuts:INC"
-    #     # args.approach = "lazy_cuts:no_good_cuts"
-    #     args.approach = "iterative"
-    #     # args.approach = "disjunctions"
+    # args.approach = "relaxation"
+    # args.approach = "lazy_cuts:INC"
+    # args.approach = "lazy_cuts:no_good_cuts"
+    # args.approach = "iterative"
+    # args.approach = "disjunctions"
     
     if not args.instance_name:
         for instance in INSTANCES:
