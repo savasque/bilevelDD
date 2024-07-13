@@ -46,7 +46,8 @@ class AlgorithmsManager:
 
         self.num_threads = num_threads
 
-    def one_time_compilation_approach(self, instance, max_width, ordering_heuristic, discard_method, solver_time_limit, approach):
+    def one_time_compilation_approach(self, max_width, ordering_heuristic, discard_method, solver_time_limit, approach):
+        instance = self.instance
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
@@ -55,7 +56,7 @@ class AlgorithmsManager:
         if max_width > 0:
             # Compile diagram
             diagram = diagram_manager.compile_diagram(
-                diagram, instance, ordering_heuristic, 
+                diagram, self.instance, ordering_heuristic,
                 method="branching", max_width=max_width, discard_method=discard_method
             )
         else:
@@ -66,7 +67,7 @@ class AlgorithmsManager:
 
         # Solve reformulation
         result, model = self.solve_DD_reformulation(
-            instance, diagram, approach,
+            diagram, approach,
             time_limit=solver_time_limit if not diagram else solver_time_limit - diagram.compilation_runtime,
             HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
@@ -102,7 +103,8 @@ class AlgorithmsManager:
 
         return result
 
-    def iterative_approach(self, instance, max_width, ordering_heuristic, discard_method, solver_time_limit):
+    def iterative_approach(self, max_width, ordering_heuristic, discard_method, solver_time_limit):
+        instance = self.instance
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
@@ -114,18 +116,18 @@ class AlgorithmsManager:
         if max_width > 0:
             # Compile diagram
             diagram = diagram_manager.compile_diagram(
-                diagram, instance, ordering_heuristic, 
+                diagram, self.instance, ordering_heuristic, 
                 method="branching", max_width=max_width, discard_method=discard_method
             )
         else:
             diagram = None
 
         # Get HPR info
-        HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds(instance)
+        HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds()
 
         # Solve DD relaxation
         result, model = self.solve_DD_reformulation(
-            instance, diagram, "relaxation",
+            diagram, "relaxation",
             time_limit=solver_time_limit if not diagram else solver_time_limit - diagram.compilation_runtime,
             HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
@@ -133,7 +135,7 @@ class AlgorithmsManager:
         model_build_time = result["model_build_runtime"]
 
         # Update bounds
-        cuts_time += self.update_upper_bound(instance, result)
+        cuts_time += self.update_upper_bound(result)
         UB = result["upper_bound"]
         LB = result["lower_bound"]
 
@@ -155,7 +157,7 @@ class AlgorithmsManager:
             # Refine model
             else:
                 # Current solution is not bilevel feasible. Update bounds, add a cut and solve again
-                model_build_time += self.add_DD_cuts(instance, model, result)
+                model_build_time += self.add_DD_cuts(model, result)
                 if self.solver == "gurobi":
                     model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
                 elif self.solver == "cplex":
@@ -178,10 +180,10 @@ class AlgorithmsManager:
                     elif self.solver == "cplex":
                         self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.solve_details.time)))
                     
-                    result = self.get_results(instance, diagram, model, 0)
+                    result = self.get_results(diagram, model, 0)
                     
                     # Update bounds
-                    cuts_time += self.update_upper_bound(instance, result)
+                    cuts_time += self.update_upper_bound(result)
 
                     LB_diff = max(result["lower_bound"] - LB, 0)
                     UB_diff = min(result["upper_bound"] - UB, 0)
@@ -232,28 +234,29 @@ class AlgorithmsManager:
 
         return best_result
     
-    def solve_DD_reformulation(self, instance, diagram, approach, time_limit, HPR_info):
+    def solve_DD_reformulation(self, diagram, approach, time_limit, HPR_info):
+        instance = self.instance
         solver = self.solver
         incumbent = {"x": HPR_info["x"], "y": HPR_info["follower_response"]} 
         if solver == "gurobi":
             model, model_building_runtime = get_gurobi_model(
                 instance, diagram,
-                incumbent=None if not self.check_leader_feasibility(instance, incumbent["x"], incumbent["y"]) else incumbent
+                incumbent=None if not self.check_leader_feasibility(incumbent["x"], incumbent["y"]) else incumbent
             )
         elif solver == "cplex":
             model, model_building_runtime = get_cplex_model(
                 instance, diagram,
-                incumbent=None if not self.check_leader_feasibility(instance, incumbent["x"], incumbent["y"]) else incumbent
+                incumbent=None if not self.check_leader_feasibility(incumbent["x"], incumbent["y"]) else incumbent
             )
 
         # Add cut associated to HPR
-        model_building_runtime += self.add_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
+        model_building_runtime += self.add_DD_cuts(model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
 
         if approach == "write_model":
             ######################################################## Write mod model aux file #############################################################
             from utils.utils import write_modified_model_mps_file, copy_aux_file
-            write_modified_model_mps_file(model, instance, diagram)
-            copy_aux_file(instance, diagram)
+            write_modified_model_mps_file(model, diagram)
+            copy_aux_file(diagram)
             results = {
                 "instance": instance.name,
                 "nL": instance.Lcols,
@@ -310,7 +313,7 @@ class AlgorithmsManager:
                     model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
                 ))
 
-                results = self.get_results(instance, diagram, model, model_building_runtime)
+                results = self.get_results(diagram, model, model_building_runtime)
             
             elif solver == "cplex":
                 callback = CplexCallback(instance, model)
@@ -335,14 +338,14 @@ class AlgorithmsManager:
                     model.solve_details.best_bound if model.solve_details.gap > 1e-6 else model.objective_value, model.solve_details.gap, round(model.solve_details.time)
                 ))
 
-                results = self.get_results(instance, diagram, model, model_building_runtime)
+                results = self.get_results(diagram, model, model_building_runtime)
         
         else:
             raise ValueError("Invalid approach: {}".format(approach))
             
         return results, model
 
-    def get_follower_response(self, instance, x):
+    def get_follower_response(self, x):
         t0 = time()
 
         follower_model = self.follower_model
@@ -350,39 +353,59 @@ class AlgorithmsManager:
 
         # Solve models
         if self.solver == "gurobi":
-            self.update_follower_model(instance, x)
+            self.update_follower_model(x)
             follower_model.optimize()
             follower_value = follower_model.ObjVal + .5
-            self.update_aux_model(instance, x, follower_value)
+            self.update_aux_model(x, follower_value)
             aux_model.optimize()
             follower_response = aux_model._vars["y"].X
         elif self.solver == "cplex":
-            self.update_follower_model(instance, x)
+            self.update_follower_model(x)
             follower_model.solve(clean_before_solve=True)
             follower_value = follower_model.objective_value + .5
-            self.update_aux_model(instance, x, follower_value)
+            self.update_aux_model(x, follower_value)
             aux_model.solve(clean_before_solve=True)
-            follower_response = np.array([aux_model._vars["y"][j].solution_value for j in range(instance.Fcols)])
+            follower_response = np.array([aux_model._vars["y"][j].solution_value for j in range(self.instance.Fcols)])
 
         return follower_value, follower_response, time() - t0
 
-    def update_upper_bound(self, instance, result):
+    def update_follower_model(self, x):
+        if self.solver == "gurobi":
+            self.follower_model._constrs.RHS = self.instance.b - self.instance.C @ x
+            self.follower_model.reset()
+        elif self.solver == "cplex":
+            for i in range(self.instance.Frows):
+                self.follower_model._constrs[i].rhs = float(self.instance.b[i] - self.instance.C[i] @ x)
+    
+    def update_aux_model(self, x, objval):
+        if self.solver == "gurobi":
+            self.aux_model._constrs["HPR"].RHS = self.instance.b - self.instance.C @ x
+            self.aux_model._constrs["objval"].RHS = objval
+            self.aux_model.reset()
+        elif self.solver == "cplex":
+            for i in range(self.instance.Frows):
+                self.aux_model._constrs["HPR"][i].rhs = float(self.instance.b[i] - self.instance.C[i] @ x)
+            self.aux_model._constrs["objval"].rhs = objval
+
+    def update_upper_bound(self, result):
         result["upper_bound"] = float("inf")
         result["bilevel_gap"] = float("inf")
+        instance = self.instance
 
         # Solve follower problem
-        result["follower_value"], result["follower_response"], runtime = self.get_follower_response(instance, result["solution"]["x"])
+        result["follower_value"], result["follower_response"], runtime = self.get_follower_response(result["solution"]["x"])
 
         # Check follower feasibility for leader problem
-        if self.check_leader_feasibility(instance, result["solution"]["x"], result["follower_response"]):
+        if self.check_leader_feasibility(result["solution"]["x"], result["follower_response"]):
             result["upper_bound"] = instance.c_leader @ result["solution"]["x"] + instance.c_follower @ result["follower_response"]
             result["bilevel_gap"] = 100 * round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-6), 6)
 
         return runtime
 
-    def get_HPR_bounds(self, instance):
+    def get_HPR_bounds(self):
         UB = float("inf")
         bilevel_gap = float("inf")
+        instance = self.instance
 
         self.logger.debug("Computing HPR bounds")
         
@@ -392,42 +415,30 @@ class AlgorithmsManager:
         HPR_runtime = time() - t0
 
         # Solve subproblems
-        follower_value, follower_response, runtime = self.get_follower_response(instance, HPR_solution["x"])
+        follower_value, follower_response, runtime = self.get_follower_response(HPR_solution["x"])
 
         self.logger.debug("HPR solved -> HPR value: {} - Time elpsed: {}".format(HPR_value, round(time() - t0)))
 
         HPR_solution = {"x": HPR_solution["x"], "y": HPR_solution["y"]}
 
         # Check follower feasibility for leader problem
-        if self.check_leader_feasibility(instance, HPR_solution["x"], follower_response):
+        if self.check_leader_feasibility(HPR_solution["x"], follower_response):
             UB = instance.c_leader @ HPR_solution["x"] + instance.c_follower @ follower_response
             bilevel_gap = 100 * round((UB - HPR_value) / abs(UB + 1e-6), 6)
 
         return HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, runtime
     
-    def check_leader_feasibility(self, instance, x, y):
-        if instance.Lrows == 0:
-            return True
-        
-        if np.all([instance.A @ x + instance.B @ y <= instance.a]):
-            return True
-        
-        return False
-    
-    def add_DD_cuts(self, instance, model, result):
+    def add_DD_cuts(self, model, result):
         t0 = time()
+        instance = self.instance
         interaction_rows = [i for i in range(instance.Frows) if instance.interaction[i] == "both"]
 
         if self.solver == "gurobi":
-            # Reset model
-            model.reset()
-
             # Create vars
             alpha = model.addVar(vtype=gp.GRB.BINARY)
             beta = model.addVars(interaction_rows, vtype=gp.GRB.BINARY)
             
             # Alpha-beta relationship
-            model.addConstrs(alpha <= 1 - beta[i] for i in interaction_rows)
             model.addConstr(alpha >= gp.quicksum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
 
             # Blocking definition
@@ -440,14 +451,15 @@ class AlgorithmsManager:
             # Value-function bound
             M = 1e6
             model.addConstr(instance.d @ model._vars["y"] <= result["follower_value"] + M * (1 - alpha))
-        
+
+            # Reset model
+            model.reset()
+
         elif self.solver == "cplex":
-            # Create vars
             alpha = model.binary_var()
             beta = model.binary_var_dict(interaction_rows)
-            
+
             # Alpha-beta relationship
-            model.add_constraints_(alpha <= 1 - beta[i] for i in interaction_rows)
             model.add_constraint_(alpha >= model.sum(1 - beta[i] for i in interaction_rows) - (len(interaction_rows) - 1))
 
             # Blocking definition
@@ -461,27 +473,21 @@ class AlgorithmsManager:
             M = 1e6
             model.add_constraint_(model.sum(instance.d[j] * model._vars["y"][j] for j in range(instance.Fcols)) <= result["follower_value"] + M * (1 - alpha))
 
-        return time() - t0  
-    
-    def update_follower_model(self, instance, x):
-        if self.solver == "gurobi":
-            self.follower_model._constrs.RHS = instance.b - instance.C @ x
-            self.follower_model.reset()
-        elif self.solver == "cplex":
-            for i in range(instance.Frows):
-                self.follower_model._constrs[i].rhs = float(instance.b[i] - instance.C[i] @ x)
-    
-    def update_aux_model(self, instance, x, objval):
-        if self.solver == "gurobi":
-            self.aux_model._constrs["HPR"].RHS = instance.b - instance.C @ x
-            self.aux_model._constrs["objval"].RHS = objval
-            self.aux_model.reset()
-        elif self.solver == "cplex":
-            for i in range(instance.Frows):
-                self.aux_model._constrs["HPR"][i].rhs = float(instance.b[i] - instance.C[i] @ x)
-            self.aux_model._constrs["objval"].rhs = objval
+        return time() - t0
 
-    def get_results(self, instance, diagram, model, model_building_runtime):
+    def check_leader_feasibility(self, x, y):
+        instance = self.instance
+
+        if instance.Lrows == 0:
+            return True
+        
+        if np.all([instance.A @ x + instance.B @ y <= instance.a]):
+            return True
+        
+        return False
+
+    def get_results(self, diagram, model, model_building_runtime):
+        instance = self.instance
         ## Gurobi results
         if self.solver == "gurobi":
             try:
