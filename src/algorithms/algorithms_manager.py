@@ -47,7 +47,6 @@ class AlgorithmsManager:
         self.num_threads = num_threads
 
     def one_time_compilation_approach(self, max_width, ordering_heuristic, discard_method, solver_time_limit, approach):
-        instance = self.instance
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
@@ -63,7 +62,7 @@ class AlgorithmsManager:
             diagram = None
 
         # Get HPR info
-        HPR_value, HPR_solution, follower_value, follower_response, _, _, HPR_runtime, follower_response_runtime = self.get_HPR_bounds(instance)
+        HPR_value, HPR_solution, follower_value, follower_response, _, _, HPR_runtime, follower_response_runtime = self.get_HPR_bounds()
 
         # Solve reformulation
         result, model = self.solve_DD_reformulation(
@@ -104,7 +103,6 @@ class AlgorithmsManager:
         return result
 
     def iterative_approach(self, max_width, ordering_heuristic, discard_method, solver_time_limit):
-        instance = self.instance
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
@@ -308,6 +306,7 @@ class AlgorithmsManager:
                 model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
                 model.Params.Threads = self.num_threads
                 model.Params.NumericFocus = 1
+                model.Params.MIPGap = 1e-8
                 model.optimize(lambda model, where: callback_func(model, where))
                 self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
                     model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
