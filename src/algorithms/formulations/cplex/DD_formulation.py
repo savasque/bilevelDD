@@ -4,7 +4,7 @@ import numpy as np
 
 from algorithms.utils.solve_HPR_gurobi import solve as solve_HPR
 
-def get_model(instance, diagram):
+def get_model(instance, diagram, incumbent):
     Lcols = instance.Lcols
     Lrows = instance.Lrows
     Fcols = instance.Fcols

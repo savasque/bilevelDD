@@ -91,17 +91,41 @@ if __name__ == "__main__":
         "miplib/mod01010",
         "miplib/mod01050",
         "miplib/mod01090",
+        "miplib/air0310",
+        "miplib/air0350",
+        "miplib/air0390",
+        "miplib/air0410",
+        "miplib/air0450",
+        "miplib/air0490",
+        "miplib/air0510",
+        "miplib/air0550",
+        "miplib/air0590",
+        "miplib/fast050710",
+        "miplib/fast050750",
+        "miplib/fast050790",
+        "miplib/cap600010",
+        "miplib/cap600050",
+        "miplib/cap600090",
+        "miplib/mitre10",
+        "miplib/mitre50",
+        "miplib/mitre90",
+        "miplib/nw0410",
+        "miplib/nw0450",
+        "miplib/nw0490",
+        "miplib/seymour10",
+        "miplib/seymour50",
+        "miplib/seymour90"
     ]
 
     # ## Testing
-    # args.solver = "cplex"
+    # args.solver = "gurobi"
     # args.max_width = 25
     # # args.num_threads = 1
 
     # args.approach = "relaxation"
-    # args.approach = "lazy_cuts:INC"
-    # args.approach = "lazy_cuts:no_good_cuts"
     # args.approach = "iterative"
+    # args.approach = "lazy_cuts:no_good_cuts"
+    # args.approach = "lazy_cuts:INC"
     # args.approach = "disjunctions"
     
     if not args.instance_name:

@@ -62,13 +62,13 @@ class AlgorithmsManager:
             diagram = None
 
         # Get HPR info
-        HPR_value, _, follower_value, follower_response, _, _, HPR_runtime, follower_response_runtime = self.get_HPR_bounds(instance)
+        HPR_value, HPR_solution, follower_value, follower_response, _, _, HPR_runtime, follower_response_runtime = self.get_HPR_bounds(instance)
 
         # Solve reformulation
         result, model = self.solve_DD_reformulation(
             instance, diagram, approach,
             time_limit=solver_time_limit if not diagram else solver_time_limit - diagram.compilation_runtime,
-            HPR_info={"follower_value": follower_value, "follower_response": follower_response}
+            HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
 
         if approach != "write_model":
@@ -121,13 +121,13 @@ class AlgorithmsManager:
             diagram = None
 
         # Get HPR info
-        HPR_value, _, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds(instance)
+        HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds(instance)
 
         # Solve DD relaxation
         result, model = self.solve_DD_reformulation(
             instance, diagram, "relaxation",
             time_limit=solver_time_limit if not diagram else solver_time_limit - diagram.compilation_runtime,
-            HPR_info={"follower_value": follower_value, "follower_response": follower_response}
+            HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
         model_time = result["model_runtime"]
         model_build_time = result["model_build_runtime"]
@@ -191,7 +191,7 @@ class AlgorithmsManager:
 
                     # Update bounds
                     if LB_diff > .5 or UB_diff < -.5:
-                        self.logger.info("New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, bilevel_gap))
+                        self.logger.info("New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, round(bilevel_gap, 2)))
                         best_result = result
 
                 iter += 1
@@ -234,10 +234,17 @@ class AlgorithmsManager:
     
     def solve_DD_reformulation(self, instance, diagram, approach, time_limit, HPR_info):
         solver = self.solver
+        incumbent = {"x": HPR_info["x"], "y": HPR_info["follower_response"]} 
         if solver == "gurobi":
-            model, model_building_runtime = get_gurobi_model(instance, diagram)
+            model, model_building_runtime = get_gurobi_model(
+                instance, diagram,
+                incumbent=None if not self.check_leader_feasibility(instance, incumbent["x"], incumbent["y"]) else incumbent
+            )
         elif solver == "cplex":
-            model, model_building_runtime = get_cplex_model(instance, diagram)
+            model, model_building_runtime = get_cplex_model(
+                instance, diagram,
+                incumbent=None if not self.check_leader_feasibility(instance, incumbent["x"], incumbent["y"]) else incumbent
+            )
 
         # Add cut associated to HPR
         model_building_runtime += self.add_DD_cuts(instance, model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
@@ -387,7 +394,7 @@ class AlgorithmsManager:
         # Solve subproblems
         follower_value, follower_response, runtime = self.get_follower_response(instance, HPR_solution["x"])
 
-        self.logger.debug("HPR solved -> Time elpsed: {}".format(round(time() - t0)))
+        self.logger.debug("HPR solved -> HPR value: {} - Time elpsed: {}".format(HPR_value, round(time() - t0)))
 
         HPR_solution = {"x": HPR_solution["x"], "y": HPR_solution["y"]}
 
