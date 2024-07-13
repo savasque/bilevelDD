@@ -3,14 +3,13 @@ from collections import deque
 import numpy as np
 
 from . import constants
-from constants import SAMPLING_LENGTH, SAMPLING_METHOD
+from constants import SAMPLING_METHOD
 
 from classes.node import Node
 from classes.arc import Arc
 
 from decision_diagram_manager.operations import Operations
 
-from algorithms.utils.solve_follower_problem import solve as solve_follower_problem
 from algorithms.utils.sampler import Sampler
 
 
@@ -45,25 +44,24 @@ class FollowerThenCompressedLeaderCompiler:
         sink_node = Node(id="sink", layer=instance.Fcols + 1)
         diagram.add_node(sink_node)
 
-        # Create dummy long arc
-        self.logger.debug("Solving follower problem to build dummy arc")
-        M = solve_follower_problem(instance, sense="maximize")[0]
-        self.logger.debug("Dummy arc big-M value: {}".format(M))
-        dummy_arc = Arc(tail=root_node, head=sink_node, value=0, cost=M, var_index=None, player="dummy")
-        diagram.add_arc(dummy_arc)
+        # # Create dummy long arc
+        # self.logger.debug("Solving follower problem to build dummy arc")
+        # M = solve_follower_problem(instance, sense="maximize")[0]
+        # self.logger.debug("Dummy arc big-M value: {}".format(M))
+        # dummy_arc = Arc(tail=root_node, head=sink_node, value=0, cost=M, var_index=None, player="dummy")
+        # diagram.add_arc(dummy_arc)
 
         ## Branching compilation
         self.branching_compilation(instance, diagram, var_order, max_width, discard_method)
 
         ## Sampled solutions compilation
-        if SAMPLING_LENGTH:
-            self.operations.clean_diagram(diagram)
-            if diagram.width == 1:
-                # Build set Y
-                sampling_runtime = 0
-                Y, sampling_runtime = self.sample_follower_solutions(instance)
-                diagram.sampling_runtime = sampling_runtime
-                self.sampling_compilation(instance, diagram, var_order, max_width, Y)
+        self.operations.clean_diagram(diagram)
+        if diagram.width == 1:
+            # Build set Y
+            sampling_runtime = 0
+            Y, sampling_runtime = self.sample_follower_solutions(instance, max_width)
+            diagram.sampling_runtime = sampling_runtime
+            self.sampling_compilation(instance, diagram, var_order, max_width, Y)
         
         # Compress follower layers
         root_node = diagram.root_node
@@ -90,10 +88,10 @@ class FollowerThenCompressedLeaderCompiler:
 
         return diagram
     
-    def sample_follower_solutions(self, instance):
+    def sample_follower_solutions(self, instance, sampling_size):
         sampler = Sampler(self.logger, sampling_method=SAMPLING_METHOD)
         # Collect y's
-        Y, sampling_runtime = sampler.sample(instance, SAMPLING_LENGTH)
+        Y, sampling_runtime = sampler.sample(instance, sampling_size)
 
         return Y, sampling_runtime
     
