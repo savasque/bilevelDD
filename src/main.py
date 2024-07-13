@@ -27,14 +27,14 @@ def run(args):
             if args.approach != "iterative":
                 ## One-time compilation approach
                 result = algorithms_manager.one_time_compilation_approach(
-                    instance, args.max_width, ordering_heuristic, 
+                    args.max_width, ordering_heuristic, 
                     discard_method, constants.SOLVER_TIME_LIMIT, args.approach
                 )
 
             else:
                 ## Iterative approach
                 result = algorithms_manager.iterative_approach(
-                    instance, args.max_width, ordering_heuristic, 
+                    args.max_width, ordering_heuristic, 
                     discard_method, constants.SOLVER_TIME_LIMIT
                 )
 
@@ -120,13 +120,13 @@ if __name__ == "__main__":
     # ## Testing
     # args.solver = "gurobi"
     # args.max_width = 25
-    # # args.num_threads = 1
+    # args.num_threads = 1
 
-    # args.approach = "relaxation"
-    # args.approach = "iterative"
-    # args.approach = "lazy_cuts:no_good_cuts"
+    # # args.approach = "relaxation"
+    # # args.approach = "iterative"
+    # # args.approach = "lazy_cuts:no_good_cuts"
     # args.approach = "lazy_cuts:INC"
-    # args.approach = "disjunctions"
+    # # args.approach = "disjunctions"
     
     if not args.instance_name:
         for instance in INSTANCES:

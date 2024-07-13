@@ -305,7 +305,7 @@ class AlgorithmsManager:
                 # Solve DD reformulation
                 model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
                 model.Params.Threads = self.num_threads
-                model.Params.NumericFocus = 1
+                # model.Params.NumericFocus = 1
                 model.Params.MIPGap = 1e-8
                 model.optimize(lambda model, where: callback_func(model, where))
                 self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
