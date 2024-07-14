@@ -146,33 +146,33 @@ class Callback:
             g_y = -instance.d @ y_hat
             g = np.hstack((g_x, g_y))
         
-        # SEP-3
-        elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-3":
-            sep_model = gp.Model()
-            sep_model.Params.OutputFlag = 0
-            delta = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
-            t = sep_model.addVars(instance.Frows)
+        # # SEP-3
+        # elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-3":
+        #     sep_model = gp.Model()
+        #     sep_model.Params.OutputFlag = 0
+        #     delta = sep_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY)
+        #     t = sep_model.addVars(instance.Frows)
 
-            sep_model.addConstr(instance.d @ list(delta.values()) <= -1)
-            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= instance.b[i] - instance.C[i] @ x_sol - instance.D[i] @ y_sol for i in range(instance.Frows))
-            sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= t[i] for i in range(instance.Frows))
-            sep_model.setObjective(gp.quicksum(t[i] for i in range(instance.Frows)), sense=gp.GRB.MINIMIZE)
-            sep_model.optimize()
+        #     sep_model.addConstr(instance.d @ list(delta.values()) <= -1)
+        #     sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= instance.b[i] - instance.C[i] @ x_sol - instance.D[i] @ y_sol for i in range(instance.Frows))
+        #     sep_model.addConstrs(instance.D[i] @ list(delta.values()) <= t[i] for i in range(instance.Frows))
+        #     sep_model.setObjective(gp.quicksum(t[i] for i in range(instance.Frows)), sense=gp.GRB.MINIMIZE)
+        #     sep_model.optimize()
 
-            delta_y = [i.X for i in delta.values()]
+        #     delta_y = [i.X for i in delta.values()]
 
-            # Build set
-            G = np.hstack((instance.C, instance.D))
-            g = (instance.b + 1 - instance.D @ delta_y)
-            # for j in range(instance.Fcols):
-                # e = np.zeros(instance.Fcols)
-                # e[j] = -1
-                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
-                # g = np.append(g, delta_y[j])
+        #     # Build set
+        #     G = np.hstack((instance.C, instance.D))
+        #     g = (instance.b + 1 - instance.D @ delta_y)
+        #     # for j in range(instance.Fcols):
+        #         # e = np.zeros(instance.Fcols)
+        #         # e[j] = -1
+        #         # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+        #         # g = np.append(g, delta_y[j])
 
-                # e = np.zeros(instance.Fcols)
-                # e[j] = 1
-                # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
-                # g = np.append(g, 1 - delta_y[j])
+        #         # e = np.zeros(instance.Fcols)
+        #         # e[j] = 1
+        #         # G = np.vstack((G, np.hstack((np.zeros(instance.Lcols), e))))
+        #         # g = np.append(g, 1 - delta_y[j])
         
         return G, g
