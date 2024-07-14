@@ -25,6 +25,14 @@ def get_model(instance, diagram, incumbent):
     x = model.binary_var_dict(Lcols, name="x")
     y = model.binary_var_dict(Fcols, name="y")
 
+    if incumbent:
+        warmstart = model.new_solution()
+        for j in range(Lcols):
+            warmstart.add_var_value(x[j], float(incumbent["x"][j]))
+        for j in range(Fcols):
+            warmstart.add_var_value(y[j], float(incumbent["y"][j]))
+        model.add_mip_start(warmstart)
+
     model._vars = {
         "x": x,
         "y": y,
