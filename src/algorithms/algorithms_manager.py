@@ -364,7 +364,7 @@ class AlgorithmsManager:
             follower_value = follower_model.objective_value + .5
             self.update_aux_model(x, follower_value)
             aux_model.solve(clean_before_solve=True)
-            follower_response = np.array([aux_model._vars["y"][j].solution_value for j in range(self.instance.Fcols)])
+            follower_response = np.array([round(aux_model._vars["y"][j].solution_value) for j in range(self.instance.Fcols)])
 
         return follower_value, follower_response, time() - t0
 
@@ -589,8 +589,8 @@ class AlgorithmsManager:
             # Retrieve vars
             try:
                 sol = {
-                    "x": np.array([int(i.solution_value + 0.5) for i in model._vars["x"].values()]),
-                    "y": np.array([int(i.solution_value + 0.5) for i in model._vars["y"].values()])
+                    "x": np.array([round(i.solution_value) for i in model._vars["x"].values()]),
+                    "y": np.array([round(i.solution_value) for i in model._vars["y"].values()])
                 }
             except:
                 sol = dict()
