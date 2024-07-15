@@ -135,16 +135,30 @@ class Callback:
             sep_model.setObjective(np.ones(w.size) @ w, sense=gp.GRB.MINIMIZE)
             sep_model.optimize()
 
-            y_hat = y.X
+            if sep_model.status == 3:
+                # Type 1 separation
+                y_hat = follower_response
 
-            # Build set
-            selected_rows = [i for i, val in instance.interaction.items() if val == "both" and w[i].X > .5] 
-            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
-            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
-            G = np.hstack((G_x, G_y))
-            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
-            g_y = -instance.d @ y_hat
-            g = np.hstack((g_x, g_y))
+                # Build set
+                selected_rows = [i for i, val in instance.interaction.items() if val == "both"] 
+                G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+                G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
+                G = np.hstack((G_x, G_y))
+                g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+                g_y = -instance.d @ y_hat
+                g = np.hstack((g_x, g_y))
+
+            else:
+                y_hat = y.X
+
+                # Build set
+                selected_rows = [i for i, val in instance.interaction.items() if val == "both" and w[i].X > .5] 
+                G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+                G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
+                G = np.hstack((G_x, G_y))
+                g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+                g_y = -instance.d @ y_hat
+                g = np.hstack((g_x, g_y))
         
         # # SEP-3
         # elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-3":
