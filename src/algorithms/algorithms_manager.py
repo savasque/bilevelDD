@@ -156,12 +156,13 @@ class AlgorithmsManager:
             else:
                 # Current solution is not bilevel feasible. Update bounds, add a cut and solve again
                 model_build_time += self.add_DD_cuts(model, result)
+                updated_time_limit = max(solver_time_limit - (time() - t0), 0)
                 if self.solver == "gurobi":
-                    model.Params.TimeLimit = max(solver_time_limit - (time() - t0), 0)
+                    model.Params.TimeLimit = updated_time_limit
                 elif self.solver == "cplex":
-                    model.parameters.timelimit = max(solver_time_limit - (time() - t0), 0)
+                    model.parameters.timelimit = updated_time_limit
                 
-                self.logger.debug("Solving new model with added cuts. Updated time limit: {} s".format(round(solver_time_limit - (time() - t0))))
+                self.logger.debug("Solving new model with added cuts. Updated time limit: {} s".format(round(updated_time_limit)))
 
                 if self.solver == "gurobi":
                     model.optimize()
@@ -187,12 +188,11 @@ class AlgorithmsManager:
                     UB_diff = min(result["upper_bound"] - UB, 0)
                     LB = max(LB, result["lower_bound"])
                     UB = min(UB, result["upper_bound"])
-                    bilevel_gap = 100 * round((UB - LB) / abs(UB + 1e-6), 6)
 
                     # Update bounds
                     if LB_diff > .5 or UB_diff < -.5:
-                        self.logger.info("New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, round(bilevel_gap, 2)))
-                        best_result = result
+                        self.logger.info("New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, round(result["bilevel_gap"], 2)))
+                        best_result = dict(result)
 
                 iter += 1
 

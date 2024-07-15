@@ -123,7 +123,7 @@ if __name__ == "__main__":
     # args.num_threads = 1
 
     # # args.approach = "relaxation"
-    # # args.approach = "iterative"
+    # args.approach = "iterative"
     # # args.approach = "lazy_cuts:no_good_cuts"
     # args.approach = "lazy_cuts:INC"
     # # args.approach = "disjunctions"
