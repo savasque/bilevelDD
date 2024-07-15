@@ -175,9 +175,9 @@ class AlgorithmsManager:
                 # Solved model
                 if model.status == 2:
                     if self.solver == "gurobi":
-                        self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.runtime)))
+                        self.logger.info("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.runtime)))
                     elif self.solver == "cplex":
-                        self.logger.debug("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.solve_details.time)))
+                        self.logger.info("Iter {} -> Model succesfully solved -> Time elapsed: {} s".format(iter + 1, round(model.solve_details.time)))
                     
                     result = self.get_results(diagram, model, 0)
                     
@@ -191,7 +191,7 @@ class AlgorithmsManager:
 
                     # Update bounds
                     if LB_diff > .5 or UB_diff < -.5:
-                        self.logger.info("New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, round(result["bilevel_gap"], 2)))
+                        self.logger.warning("\t>New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, round(result["bilevel_gap"], 2)))
                         best_result = dict(result)
 
                 iter += 1
