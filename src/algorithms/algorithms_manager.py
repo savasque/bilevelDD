@@ -103,6 +103,7 @@ class AlgorithmsManager:
         return result
 
     def iterative_approach(self, max_width, ordering_heuristic, discard_method, solver_time_limit):
+        instance = self.instance
         diagram = DecisionDiagram(0)
         diagram_manager = DecisionDiagramManager()
 
@@ -114,14 +115,14 @@ class AlgorithmsManager:
         if max_width > 0:
             # Compile diagram
             diagram = diagram_manager.compile_diagram(
-                diagram, self.instance, ordering_heuristic, 
+                diagram, instance, ordering_heuristic, 
                 method="branching", max_width=max_width, discard_method=discard_method
             )
         else:
             diagram = None
 
         # Get HPR info
-        HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds()
+        HPR_value, HPR_solution, follower_value, follower_response, ub, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds()
 
         # Solve DD relaxation
         result, model = self.solve_DD_reformulation(
@@ -134,8 +135,9 @@ class AlgorithmsManager:
 
         # Update bounds
         cuts_time += self.update_upper_bound(result)
-        UB = result["upper_bound"]
-        LB = result["lower_bound"]
+        ub = min(ub, result["upper_bound"])
+        lb = result["lower_bound"]
+        bilevel_gap = result["bilevel_gap"]
 
         self.logger.info("Initial bounds -> LB: {lower_bound} - UB: {upper_bound} - Bilevel gap: {bilevel_gap}%".format(**result))
 
@@ -143,7 +145,8 @@ class AlgorithmsManager:
             model.Params.OutputFlag = 0
         elif self.solver == "cplex":
             model.parameters.mip.display.set(0)
-        best_result = result
+
+        best_result = dict(result)
 
         # Main iteration
         while time() - t0 <= solver_time_limit:
@@ -184,15 +187,16 @@ class AlgorithmsManager:
                     # Update bounds
                     cuts_time += self.update_upper_bound(result)
 
-                    LB_diff = max(result["lower_bound"] - LB, 0)
-                    UB_diff = min(result["upper_bound"] - UB, 0)
-                    LB = max(LB, result["lower_bound"])
-                    UB = min(UB, result["upper_bound"])
-
                     # Update bounds
-                    if LB_diff > .5 or UB_diff < -.5:
-                        self.logger.warning("\t>New bounds -> LB: {} (+{}) - UB: {} ({}) - Bilevel gap: {}%".format(LB, LB_diff, UB, UB_diff, round(result["bilevel_gap"], 2)))
-                        best_result = dict(result)
+                    lb = max(lb, result["lower_bound"])
+                    ub = min(ub, result["upper_bound"])
+                    new_bilevel_gap = 100 * (ub - lb) / (ub + 1e-6)
+                    best_result["lower_bound"] = lb
+                    best_result["upper_bound"] = ub
+                    if new_bilevel_gap < bilevel_gap:
+                        self.logger.warning("\t>Bilevel gap update: {}%".format(new_bilevel_gap))
+                        best_result["bilevel_gap"] = new_bilevel_gap
+                        bilevel_gap = new_bilevel_gap
 
                 iter += 1
 
@@ -416,7 +420,7 @@ class AlgorithmsManager:
         # Solve subproblems
         follower_value, follower_response, runtime = self.get_follower_response(HPR_solution["x"])
 
-        self.logger.debug("HPR solved -> HPR value: {} - Time elpsed: {}".format(HPR_value, round(time() - t0)))
+        self.logger.debug("HPR solved -> HPR value: {} - Time elpsed: {} s".format(HPR_value, round(time() - t0)))
 
         HPR_solution = {"x": HPR_solution["x"], "y": HPR_solution["y"]}
 
