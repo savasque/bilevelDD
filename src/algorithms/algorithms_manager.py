@@ -190,7 +190,7 @@ class AlgorithmsManager:
                     # Update bounds
                     lb = max(lb, result["lower_bound"])
                     ub = min(ub, result["upper_bound"])
-                    new_bilevel_gap = 100 * (ub - lb) / (ub + 1e-6)
+                    new_bilevel_gap = 100 * (ub - lb) / abs(ub + 1e-6)
                     best_result["lower_bound"] = lb
                     best_result["upper_bound"] = ub
                     if new_bilevel_gap < bilevel_gap:
