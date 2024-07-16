@@ -165,7 +165,7 @@ class AlgorithmsManager:
                 elif self.solver == "cplex":
                     model.parameters.timelimit = updated_time_limit
                 
-                self.logger.debug("Solving new model with added cuts. Updated time limit: {} s".format(round(updated_time_limit)))
+                self.logger.info("Solving new model with added cuts. Updated time limit: {} s".format(round(updated_time_limit)))
 
                 if self.solver == "gurobi":
                     model.optimize()
@@ -535,8 +535,8 @@ class AlgorithmsManager:
             # Retrieve vars
             try:
                 sol = {
-                    "x": model._vars["x"].X,
-                    "y": model._vars["y"].X
+                    "x": model._vars["x"].X.round(),
+                    "y": model._vars["y"].X.round()
                 }
                 if diagram:
                     sol.update({
