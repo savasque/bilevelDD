@@ -1,6 +1,6 @@
 import gurobipy as gp
 
-def solve(instance, obj="leader", sense="minimize"):
+def solve(instance, obj="leader", sense="minimize", time_limit=3600):
     Lcols = instance.Lcols
     Fcols = instance.Fcols
     A = instance.A
@@ -15,6 +15,7 @@ def solve(instance, obj="leader", sense="minimize"):
 
     model = gp.Model()
     model.Params.OutputFlag = 0
+    model.Params.TimeLimit = time_limit
 
     x = model.addMVar(Lcols, vtype=gp.GRB.BINARY, name="x")
     y = model.addMVar(Fcols, vtype=gp.GRB.BINARY, name="y")
