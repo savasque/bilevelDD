@@ -67,7 +67,7 @@ class AlgorithmsManager:
         # Solve reformulation
         result, model = self.solve_DD_reformulation(
             diagram, approach,
-            time_limit=solver_time_limit if not diagram else solver_time_limit - diagram.compilation_runtime,
+            time_limit=solver_time_limit - HPR_runtime if not diagram else solver_time_limit - diagram.compilation_runtime - HPR_runtime,
             HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
 
@@ -127,7 +127,7 @@ class AlgorithmsManager:
         # Solve DD relaxation
         result, model = self.solve_DD_reformulation(
             diagram, "relaxation",
-            time_limit=solver_time_limit if not diagram else solver_time_limit - diagram.compilation_runtime,
+            time_limit=solver_time_limit - HPR_runtime if not diagram else solver_time_limit - diagram.compilation_runtime - HPR_runtime,
             HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
         model_time = result["model_runtime"]
