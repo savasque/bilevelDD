@@ -115,7 +115,7 @@ class Callback:
             G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
             G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
             G = np.hstack((G_x, G_y))
-            g_x = (instance.b + (1 + 1e6) - instance.D @ y_hat)[selected_rows]
+            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
             g_y = -instance.d @ y_hat
             g = np.hstack((g_x, g_y))
 
@@ -144,7 +144,7 @@ class Callback:
                 G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
                 G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
                 G = np.hstack((G_x, G_y))
-                g_x = (instance.b + (1 + 1e6) - instance.D @ y_hat)[selected_rows]
+                g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
                 g_y = -instance.d @ y_hat
                 g = np.hstack((g_x, g_y))
 
@@ -156,7 +156,7 @@ class Callback:
                 G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
                 G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
                 G = np.hstack((G_x, G_y))
-                g_x = (instance.b + (1 + 1e6) - instance.D @ y_hat)[selected_rows]
+                g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
                 g_y = -instance.d @ y_hat
                 g = np.hstack((g_x, g_y))
         
