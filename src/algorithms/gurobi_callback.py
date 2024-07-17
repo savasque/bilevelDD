@@ -39,8 +39,8 @@ class Callback:
             # Retrieve solution
             x = model._vars["x"]
             y = model._vars["y"]
-            x_sol = model.cbGetSolution(x)
-            y_sol = model.cbGetSolution(y)
+            x_sol = model.cbGetSolution(x).round()
+            y_sol = model.cbGetSolution(y).round()
 
             new_value_function = False
 
@@ -51,10 +51,10 @@ class Callback:
                 new_value_function = True
                 self.update_follower_model(instance, cbdata.follower_model, x_sol)
                 cbdata.follower_model.optimize()
-                follower_value = cbdata.follower_model.ObjVal
+                follower_value = cbdata.follower_model.ObjVal + .5
                 self.update_aux_model(instance, cbdata.aux_model, x_sol, follower_value)
                 cbdata.aux_model.optimize()
-                follower_response = cbdata.aux_model._vars["y"].X
+                follower_response = cbdata.aux_model._vars["y"].X.round()
                 cbdata.value_function_pool[str(x_sol)] = (follower_value, follower_response)
 
             # Add cut
@@ -115,7 +115,7 @@ class Callback:
             G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
             G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
             G = np.hstack((G_x, G_y))
-            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+            g_x = (instance.b + (1 - 1e-6) - instance.D @ y_hat)[selected_rows]
             g_y = -instance.d @ y_hat
             g = np.hstack((g_x, g_y))
 
@@ -144,7 +144,7 @@ class Callback:
                 G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
                 G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
                 G = np.hstack((G_x, G_y))
-                g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+                g_x = (instance.b + (1 - 1e-6) - instance.D @ y_hat)[selected_rows]
                 g_y = -instance.d @ y_hat
                 g = np.hstack((g_x, g_y))
 
@@ -156,7 +156,7 @@ class Callback:
                 G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
                 G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
                 G = np.hstack((G_x, G_y))
-                g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+                g_x = (instance.b + (1 - 1e-6) - instance.D @ y_hat)[selected_rows]
                 g_y = -instance.d @ y_hat
                 g = np.hstack((g_x, g_y))
         
