@@ -74,10 +74,10 @@ class AlgorithmsManager:
         )
 
         if approach != "write_model":
-            # Include HPR info
-            HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
-            result["HPR"] = HPR_value
-            result["HPR_runtime"] = HPR_runtime
+            # # Include HPR info
+            # HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
+            # result["HPR"] = HPR_value
+            # result["HPR_runtime"] = HPR_runtime
 
             # Update final result
             result["approach"] = approach
@@ -224,10 +224,10 @@ class AlgorithmsManager:
         else:
             best_result["opt"] = 0
 
-        # Include HPR info
-        HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
-        best_result["HPR"] = HPR_value
-        best_result["HPR_runtime"] = round(HPR_runtime)
+        # # Include HPR info
+        # HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
+        # best_result["HPR"] = HPR_value
+        # best_result["HPR_runtime"] = round(HPR_runtime)
 
         # Compute continuous relaxation bound
         if self.solver == "gurobi":
