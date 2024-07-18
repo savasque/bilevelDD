@@ -140,6 +140,8 @@ class AlgorithmsManager:
         # Update bounds
         subproblems_runtime, opt = self.update_upper_bound(result, max(0, solver_time_limit - (time() - t0)))
         cuts_time = 0
+        lb = -float("inf")
+        ub = float("inf")
         if opt:
             cuts_time += subproblems_runtime
             ub = min(ub, result["upper_bound"])
@@ -418,6 +420,7 @@ class AlgorithmsManager:
         instance = self.instance
 
         # Solve follower problem
+        self.logger.debug("Solving subproblems")
         result["follower_value"], result["follower_response"], runtime, opt = self.get_follower_response(result["solution"]["x"], time_limit)
 
         if opt == True:
@@ -426,7 +429,6 @@ class AlgorithmsManager:
                 result["upper_bound"] = instance.c_leader @ result["solution"]["x"] + instance.c_follower @ result["follower_response"]
                 result["bilevel_gap"] = 100 * round((result["upper_bound"] - result["lower_bound"]) / abs(result["upper_bound"] + 1e-6), 6)
 
-        
         return runtime, opt
 
     def get_HPR_bounds(self, time_limit):
