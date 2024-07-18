@@ -78,6 +78,8 @@ class AlgorithmsManager:
             # HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
             # result["HPR"] = HPR_value
             # result["HPR_runtime"] = HPR_runtime
+            result["HPR"] = None
+            result["HPR_runtime"] = 0
 
             # Update final result
             result["approach"] = approach
@@ -228,6 +230,8 @@ class AlgorithmsManager:
         # HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
         # best_result["HPR"] = HPR_value
         # best_result["HPR_runtime"] = round(HPR_runtime)
+        best_result["HPR"] = None
+        best_result["HPR_runtime"] = 0
 
         # Compute continuous relaxation bound
         if self.solver == "gurobi":
