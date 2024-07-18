@@ -56,7 +56,7 @@ class FollowerThenCompressedLeaderCompiler:
 
         ## Sampled solutions compilation
         self.operations.clean_diagram(diagram)
-        if diagram.width == 1:
+        if diagram.node_count == 0:
             # Build set Y
             sampling_runtime = 0
             Y, sampling_runtime = self.sample_follower_solutions(instance, max_width)
