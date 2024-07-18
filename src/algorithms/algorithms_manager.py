@@ -139,6 +139,7 @@ class AlgorithmsManager:
 
         # Update bounds
         subproblems_runtime, opt = self.update_upper_bound(result, max(0, solver_time_limit - (time() - t0)))
+        cuts_time = 0
         if opt:
             cuts_time += subproblems_runtime
             ub = min(ub, result["upper_bound"])
