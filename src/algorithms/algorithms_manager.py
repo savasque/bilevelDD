@@ -61,25 +61,28 @@ class AlgorithmsManager:
         else:
             diagram = None
 
-        # Get HPR info
-        HPR_value, HPR_solution, follower_value, follower_response, _, _, HPR_runtime, follower_response_runtime = self.get_HPR_bounds()
+        # # Get HPR info
+        # HPR_value, HPR_solution, follower_value, follower_response, _, _, HPR_runtime, follower_response_runtime = self.get_HPR_bounds()
 
         # Solve reformulation
+        HPR_runtime = 0
+        HPR_value = 0
         result, model = self.solve_DD_reformulation(
             diagram, approach,
-            time_limit=solver_time_limit - HPR_runtime if not diagram else solver_time_limit - diagram.compilation_runtime - HPR_runtime,
-            HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
+            time_limit=solver_time_limit - HPR_runtime if not diagram else solver_time_limit - diagram.compilation_runtime - HPR_runtime
+            # HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
 
         if approach != "write_model":
             # Include HPR info
+            HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
             result["HPR"] = HPR_value
             result["HPR_runtime"] = HPR_runtime
 
             # Update final result
             result["approach"] = approach
             result["discard_method"] = discard_method
-            result["cuts_runtime"] += round(follower_response_runtime)
+            # result["cuts_runtime"] += round(follower_response_runtime)
             result["iters"] = 0
             if result["bilevel_gap"] < 1e-6:
                 result["opt"] = 1
@@ -121,20 +124,21 @@ class AlgorithmsManager:
         else:
             diagram = None
 
-        # Get HPR info
-        HPR_value, HPR_solution, follower_value, follower_response, ub, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds(solver_time_limit - (time() - t0))
+        # # Get HPR info
+        # HPR_value, HPR_solution, follower_value, follower_response, ub, bilevel_gap, HPR_runtime, cuts_time = self.get_HPR_bounds(max(0, solver_time_limit - (time() - t0)))
 
         # Solve DD relaxation
+        HPR_runtime = 0
         result, model = self.solve_DD_reformulation(
             diagram, "relaxation",
-            time_limit=solver_time_limit - HPR_runtime if not diagram else solver_time_limit - diagram.compilation_runtime - HPR_runtime,
-            HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
+            time_limit=solver_time_limit - HPR_runtime if not diagram else solver_time_limit - diagram.compilation_runtime - HPR_runtime
+            # HPR_info={"x": HPR_solution["x"], "follower_value": follower_value, "follower_response": follower_response}
         )
         model_time = result["model_runtime"]
         model_build_time = result["model_build_runtime"]
 
         # Update bounds
-        subproblems_runtime, opt = self.update_upper_bound(result, solver_time_limit - (time() - t0))
+        subproblems_runtime, opt = self.update_upper_bound(result, max(0, solver_time_limit - (time() - t0)))
         if opt:
             cuts_time += subproblems_runtime
             ub = min(ub, result["upper_bound"])
@@ -218,6 +222,7 @@ class AlgorithmsManager:
             best_result["opt"] = 0
 
         # Include HPR info
+        HPR_value, _, HPR_runtime = self.get_HPR_bounds(1e6)
         best_result["HPR"] = HPR_value
         best_result["HPR_runtime"] = round(HPR_runtime)
 
@@ -240,23 +245,27 @@ class AlgorithmsManager:
 
         return best_result
     
-    def solve_DD_reformulation(self, diagram, approach, time_limit, HPR_info):
+    def solve_DD_reformulation(self, diagram, approach, time_limit, HPR_info=None):
         instance = self.instance
         solver = self.solver
-        incumbent = {"x": HPR_info["x"], "y": HPR_info["follower_response"]} 
+
+        incumbent = None if not HPR_info else {"x": HPR_info["x"], "y": HPR_info["follower_response"]}
+        if incumbent:
+            incumbent = incumbent if self.check_leader_feasibility(incumbent["x"], incumbent["y"]) else None
+
         if solver == "gurobi":
             model, model_building_runtime = get_gurobi_model(
                 instance, diagram,
-                incumbent=None if not self.check_leader_feasibility(incumbent["x"], incumbent["y"]) else incumbent
+                incumbent=incumbent
             )
         elif solver == "cplex":
             model, model_building_runtime = get_cplex_model(
                 instance, diagram,
-                incumbent=None if not self.check_leader_feasibility(incumbent["x"], incumbent["y"]) else incumbent
+                incumbent=incumbent
             )
 
-        # Add cut associated to HPR
-        model_building_runtime += self.add_DD_cuts(model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
+        # # Add cut associated to HPR
+        # model_building_runtime += self.add_DD_cuts(model, {"follower_value": HPR_info["follower_value"], "follower_response": HPR_info["follower_response"]})
 
         if approach == "write_model":
             ######################################################## Write mod model aux file #############################################################
@@ -361,14 +370,14 @@ class AlgorithmsManager:
         # Solve models
         if self.solver == "gurobi":
             self.update_follower_model(x)
-            follower_model.Params.TimeLimit = time_limit - (time() - t0)
+            follower_model.Params.TimeLimit = max(0, time_limit - (time() - t0))
             follower_model.optimize()
             try:
                 follower_value = follower_model.ObjVal + .5
             except:
                 return None, None, time() - t0, False
             self.update_aux_model(x, follower_value)
-            aux_model.Params.TimeLimit = time_limit - (time() - t0)
+            aux_model.Params.TimeLimit = max(0, time_limit - (time() - t0))
             aux_model.optimize()
             try:
                 follower_response = aux_model._vars["y"].X
@@ -428,24 +437,26 @@ class AlgorithmsManager:
         
         # Solve HPR
         t0 = time()
-        HPR_value, HPR_solution = solve_HPR(instance, time_limit=time_limit - (time() - t0))
+        HPR_value, HPR_solution = solve_HPR(instance, time_limit=max(0, time_limit - (time() - t0)))
         HPR_runtime = time() - t0
 
-        # Solve subproblems
-        follower_value, follower_response, runtime, opt = self.get_follower_response(HPR_solution["x"], time_limit - (time() - t0))
-        if opt:
-            self.logger.debug("HPR solved -> HPR value: {} - Time elpsed: {} s".format(HPR_value, round(time() - t0)))
+        # # Solve subproblems
+        # follower_value, follower_response, runtime, opt = self.get_follower_response(HPR_solution["x"], max(0, time_limit - (time() - t0)))
+        # if opt:
+        #     self.logger.debug("HPR solved -> HPR value: {} - Time elpsed: {} s".format(HPR_value, round(time() - t0)))
 
-            HPR_solution = {"x": HPR_solution["x"], "y": HPR_solution["y"]}
+        #     HPR_solution = {"x": HPR_solution["x"], "y": HPR_solution["y"]}
 
-            # Check follower feasibility for leader problem
-            if self.check_leader_feasibility(HPR_solution["x"], follower_response):
-                UB = instance.c_leader @ HPR_solution["x"] + instance.c_follower @ follower_response
-                bilevel_gap = 100 * round((UB - HPR_value) / abs(UB + 1e-6), 6)
+        #     # Check follower feasibility for leader problem
+        #     if self.check_leader_feasibility(HPR_solution["x"], follower_response):
+        #         UB = instance.c_leader @ HPR_solution["x"] + instance.c_follower @ follower_response
+        #         bilevel_gap = 100 * round((UB - HPR_value) / abs(UB + 1e-6), 6)
 
-            return HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, runtime
-        else:
-            return None, None, None, None, None, None, None, None 
+        #     return HPR_value, HPR_solution, follower_value, follower_response, UB, bilevel_gap, HPR_runtime, runtime
+        # else:
+        #     return None, None, None, None, None, None, None, None 
+
+        return HPR_value, HPR_solution, HPR_runtime
     
     def add_DD_cuts(self, model, result):
         t0 = time()
