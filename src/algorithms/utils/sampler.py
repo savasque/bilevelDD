@@ -110,19 +110,39 @@ class Sampler:
         t0 = time()
         Y = dict()
 
+        Lcols = instance.Lcols
+        Fcols = instance.Fcols
+        Frows = instance.Frows
+        A = instance.A
+        B = instance.B
+        C = instance.C
+        D = instance.D
+        a = instance.a
+        b = instance.b
+        d = instance.d
+
         model = gp.Model()
         model.Params.OutputFlag = 0
-        x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
-        y = model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+        x = model.addMVar(Lcols, vtype=gp.GRB.BINARY, name="x")
+        y = model.addMVar(Fcols, vtype=gp.GRB.BINARY, name="y")
+        
         # HPR constrs
-        model.addConstrs((instance.A[i] @ list(x.values()) + instance.B[i] @ list(y.values()) <= instance.a[i] for i in range(instance.Lrows)), name="leader_constrs")
-        model.addConstrs((instance.C[i] @ list(x.values()) + instance.D[i] @ list(y.values()) <= instance.b[i] for i in range(instance.Frows)), name="follower_constrs")
+        if A.shape[0] != 0 and B.shape[0] != 0:
+            model.addConstr((A @ x + B @ y <= a), name="LeaderHPR")
+        elif A.shape[0] != 0:
+            model.addConstr((A @ x <= a), name="LeaderHPR")
+        elif B.shape[0] != 0:
+            model.addConstr((B @ y <= a), name="LeaderHPR")
+        model.addConstr((C @ x + D @ y <= b), name="FollowerHPR")
+
         # Get known optimal y-values (Fischetti et al, 2017)
         model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
+        
         # Objective function
-        obj_func = instance.d @ list(y.values())
+        obj_func = d @ y
         # obj_func = gp.quicksum(instance.D[i] @ list(y.values()) for i in range(instance.Frows))
         model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
+        
         model.optimize()
 
         queue = deque([(model, y)])
@@ -131,12 +151,11 @@ class Sampler:
                 break
 
             model, y = queue.popleft()
-            # # Tabu list
-            # for tabu_y in Y.values():
-            #     model.addConstr(self.hamming_distance(y, tabu_y) >= 1)
+            model.Params.TimeLimit = max(0, 60 - (time() - t0))
             model.optimize()
+
             if model.status == 2:
-                y_value = [i.X for i in y.values()]
+                y_value = np.array([i.X for i in y])
 
                 # # Sanity check
                 # if str(y) in Y:
@@ -147,12 +166,13 @@ class Sampler:
 
                 # Create new model with disjunction
                 new_model = model.copy()
-                x = {j: new_model.getVarByName("x[{}]".format(j)) for j in range(instance.Lcols)}
-                new_y = {j: new_model.getVarByName("y[{}]".format(j)) for j in range(instance.Fcols)}
-                z = new_model.addVars(range(instance.Frows), vtype=gp.GRB.BINARY)
+                x = np.array([new_model.getVarByName("x[{}]".format(j)) for j in range(Lcols)])
+                new_y = np.array([new_model.getVarByName("y[{}]".format(j)) for j in range(Fcols)])
+                z = new_model.addMVar(instance.Frows, vtype=gp.GRB.BINARY)
+
                 M = 1e6
-                new_model.addConstrs(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1 - M * (1 - z[i]) for i in range(instance.Frows))
-                new_model.addConstr(gp.quicksum(z[i] for i in range(instance.Frows)) >= 1)
+                new_model.addConstrs((C[i] @ x + D[i] @ y_value >= b[i] + 1 - M * (1 - z[i]) for i in range(Frows)))
+                new_model.addConstr(np.ones(Frows) @ z >= 1)
                 
                 queue.append((new_model, new_y))
         
@@ -173,5 +193,7 @@ class Sampler:
         #         a = None
 
         Y = list(Y.values())
+
+        self.logger.debug("Finishing sampling -> Time elapsed: {} s".format(round(time() - t0)))
         
         return Y, time() - t0

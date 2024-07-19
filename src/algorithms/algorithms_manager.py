@@ -216,7 +216,7 @@ class AlgorithmsManager:
                         best_result["lower_bound"] = lb
                         best_result["upper_bound"] = ub
                         if new_bilevel_gap < bilevel_gap:
-                            self.logger.warning("\t>Bilevel gap update: {}%".format(new_bilevel_gap))
+                            self.logger.warning("\t> Bilevel gap update: {}%".format(new_bilevel_gap))
                             best_result["bilevel_gap"] = new_bilevel_gap
                             bilevel_gap = new_bilevel_gap
 

@@ -114,7 +114,10 @@ if __name__ == "__main__":
         "miplib/nw0490",
         "miplib/seymour10",
         "miplib/seymour50",
-        "miplib/seymour90"
+        "miplib/seymour90",
+        "miplib/harp210",
+        "miplib/harp250",
+        "miplib/harp290"
     ]
 
     # ## Testing
@@ -122,11 +125,11 @@ if __name__ == "__main__":
     # args.max_width = 25
     # args.num_threads = 1
 
-    # # args.approach = "relaxation"
+    # # # args.approach = "relaxation"
     # args.approach = "iterative"
-    # # args.approach = "lazy_cuts:no_good_cuts"
-    # args.approach = "lazy_cuts:INC"
-    # # args.approach = "disjunctions"
+    # # # args.approach = "lazy_cuts:no_good_cuts"
+    # # args.approach = "lazy_cuts:INC"
+    # # # args.approach = "disjunctions"
     
     if not args.instance_name:
         for instance in INSTANCES:
