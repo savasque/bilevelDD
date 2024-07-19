@@ -51,14 +51,14 @@ class Callback:
                 new_value_function = True
                 self.update_follower_model(instance, cbdata.follower_model, x_sol)
                 cbdata.follower_model.optimize()
-                follower_value = cbdata.follower_model.ObjVal + .5
-                self.update_aux_model(instance, cbdata.aux_model, x_sol, follower_value)
+                follower_value = cbdata.follower_model.ObjVal
+                self.update_aux_model(instance, cbdata.aux_model, x_sol, follower_value + 0.5)
                 cbdata.aux_model.optimize()
                 follower_response = cbdata.aux_model._vars["y"].X.round()
                 cbdata.value_function_pool[str(x_sol)] = (follower_value, follower_response)
 
             # Add cut
-            if instance.d @ y_sol > follower_value + 1e-3:
+            if instance.d @ y_sol > follower_value + 1e-6:
                 if new_value_function:
                     if cbdata.cuts_type == "INC+NGC":
                         cbdata.num_cuts += 2
@@ -115,7 +115,7 @@ class Callback:
             G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
             G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
             G = np.hstack((G_x, G_y))
-            g_x = (instance.b + (1 - 1e-6) - instance.D @ y_hat)[selected_rows]
+            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
             g_y = -instance.d @ y_hat
             g = np.hstack((g_x, g_y))
 
@@ -138,27 +138,17 @@ class Callback:
             if sep_model.status == 3:
                 # Type 1 separation
                 y_hat = follower_response
-
-                # Build set
-                selected_rows = [i for i, val in instance.interaction.items() if val == "both"] 
-                G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
-                G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
-                G = np.hstack((G_x, G_y))
-                g_x = (instance.b + (1 - 1e-6) - instance.D @ y_hat)[selected_rows]
-                g_y = -instance.d @ y_hat
-                g = np.hstack((g_x, g_y))
-
             else:
                 y_hat = y.X
 
-                # Build set
-                selected_rows = [i for i, val in instance.interaction.items() if val == "both" and w[i].X > .5] 
-                G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
-                G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
-                G = np.hstack((G_x, G_y))
-                g_x = (instance.b + (1 - 1e-6) - instance.D @ y_hat)[selected_rows]
-                g_y = -instance.d @ y_hat
-                g = np.hstack((g_x, g_y))
+            # Build set
+            selected_rows = [i for i, val in instance.interaction.items() if val == "both"] 
+            G_x = np.vstack((instance.C[selected_rows, :], np.zeros(instance.Lcols)))
+            G_y = np.vstack((np.zeros((len(selected_rows), instance.Fcols)), -instance.d))
+            G = np.hstack((G_x, G_y))
+            g_x = (instance.b + 1 - instance.D @ y_hat)[selected_rows]
+            g_y = -instance.d @ y_hat
+            g = np.hstack((g_x, g_y))
         
         # # SEP-3
         # elif BILEVEL_FREE_SET_SEP_TYPE == "SEP-3":
