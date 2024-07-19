@@ -126,7 +126,7 @@ class Sampler:
         model.optimize()
 
         queue = deque([(model, y)])
-        while queue and time() - t0 <= 300:
+        while queue and time() - t0 <= 60:
             if len(Y) == num_solutions:
                 break
 
@@ -143,42 +143,15 @@ class Sampler:
                 #     a = None
 
                 Y[str(y_value)] = y_value
-                self.logger.debug("Sampled solutions: {}".format(len(Y)))
-
-                # for i in range(instance.Lrows):
-                #     new_model = gp.Model()
-                #     new_model.Params.OutputFlag = 0
-                #     x = new_model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
-                #     new_y = new_model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
-                #     # HPR constrs
-                #     new_model.addConstrs(instance.A[k] @ x.values() + instance.B[k] @ new_y.values() <= instance.a[k] for k in range(instance.Lrows))
-                #     new_model.addConstrs(instance.C[k] @ x.values() + instance.D[k] @ new_y.values() <= instance.b[k] for k in range(instance.Frows))
-                #     new_model.addConstr(instance.A[i] @ x.values() + instance.B[i] @ y >= instance.a[i] + 1)
-                #     # Get known optimal y-values (Fischetti et al, 2017)
-                #     new_model.addConstrs(new_y[j] == val for j, val in instance.known_y_values.items())
-                #     # Objective function
-                #     obj_func = instance.d @ new_y.values()
-                #     new_model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
-                    
-                #     queue.append((new_model, new_y))
-
-                # for i in range(instance.Frows):
-                #     if instance.interaction[i] == "both":
-                #         # Create new model with disjunction
-                #         new_model = model.copy()
-                #         x = {j: new_model.getVarByName("x[{}]".format(j)) for j in range(instance.Lcols)}
-                #         new_y = {j: new_model.getVarByName("y[{}]".format(j)) for j in range(instance.Fcols)}
-                #         # Add constr defining disjuntion
-                #         new_model.addConstr(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1)
-                        
-                #         queue.append((new_model, new_y))
+                self.logger.debug("Total sampled solutions: {} - Time elapsed: {} s".format(len(Y), round(time() - t0)))
 
                 # Create new model with disjunction
                 new_model = model.copy()
                 x = {j: new_model.getVarByName("x[{}]".format(j)) for j in range(instance.Lcols)}
                 new_y = {j: new_model.getVarByName("y[{}]".format(j)) for j in range(instance.Fcols)}
                 z = new_model.addVars(range(instance.Frows), vtype=gp.GRB.BINARY)
-                new_model.addConstrs(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1 - 1e6 * (1 - z[i]) for i in range(instance.Frows))
+                M = 1e6
+                new_model.addConstrs(instance.C[i] @ list(x.values()) + instance.D[i] @ y_value >= instance.b[i] + 1 - M * (1 - z[i]) for i in range(instance.Frows))
                 new_model.addConstr(gp.quicksum(z[i] for i in range(instance.Frows)) >= 1)
                 
                 queue.append((new_model, new_y))
