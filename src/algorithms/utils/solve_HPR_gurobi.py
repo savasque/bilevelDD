@@ -39,8 +39,10 @@ def solve(instance, obj="leader", sense="minimize", time_limit=3600):
     model.optimize()
 
     vars = {
-        "x": x.X,
-        "y": y.X
+        "x": x.X.round(),
+        "y": y.X.round()
     }
+
+    objval = c_leader @ vars["x"] + c_follower @ vars["y"]
     
-    return model.ObjVal, vars
+    return objval, vars

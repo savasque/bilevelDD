@@ -35,7 +35,7 @@ class Sampler:
         return Y[:num_solutions], round(time() - t0)
 
     def hamming_distance(self, v, v_2):
-        return gp.quicksum(v[j] for j in v if v_2[j] == 0) + gp.quicksum(1 - v[j] for j in v if v_2[j] == 1)
+        return gp.quicksum(v[j] for j in range(len(v)) if v_2[j] < .5) + gp.quicksum(1 - v[j] for j in range(len(v)) if v_2[j] > .5)
 
     def solve_follower_HPR(self, instance, forbidden_X, forbidden_Y, num_solutions, obj):
         model = gp.Model()
@@ -173,6 +173,9 @@ class Sampler:
                 M = 1e6
                 new_model.addConstrs((C[i] @ x + D[i] @ y_value >= b[i] + 1 - M * (1 - z[i]) for i in range(Frows)))
                 new_model.addConstr(np.ones(Frows) @ z >= 1)
+
+                for y_2 in Y.values():
+                    new_model.addConstr(self.hamming_distance(new_y, y_2) >= 1)
                 
                 queue.append((new_model, new_y))
         

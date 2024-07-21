@@ -4,7 +4,7 @@ import numpy as np
 
 from algorithms.utils.solve_HPR_gurobi import solve as solve_HPR
 
-def get_model(instance, diagram, incumbent):
+def get_model(instance, diagram, max_follower_value, incumbent):
     Lcols = instance.Lcols
     Lrows = instance.Lrows
     Fcols = instance.Fcols
@@ -73,9 +73,8 @@ def get_model(instance, diagram, incumbent):
         # Strong duality
         model.add_constraint_(pi[sink_node.id] == 0, ctname="strong-dual-sink")
 
-        # Gamma bounds
-        M = 1e6
-        model.add_constraints_((lamda[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader"), names="gamma-bounds")
+        # Primal-dual linearization
+        model.add_constraints_((lamda[arc.id] <= (max_follower_value - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader"), names="gamma-bounds")
 
         # Alpha-beta relationship
         model.add_constraints_((alpha[arc.id] <= model.sum(beta[arc.id, i] for i in interaction_rows) for arc in arcs if arc.player == "leader"), names="alpha-beta1")

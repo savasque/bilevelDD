@@ -2,7 +2,7 @@ from time import time
 import gurobipy as gp
 import numpy as np
 
-def get_model(instance, diagram, incumbent=None):
+def get_model(instance, diagram, max_follower_value, incumbent=None):
     Lcols = instance.Lcols
     Fcols = instance.Fcols
     A = instance.A
@@ -76,9 +76,8 @@ def get_model(instance, diagram, incumbent=None):
         # Strong duality
         model.addConstr(pi[sink_node.id] == 0, name="StrongDualSink")
 
-        # Capacity constraints
-        M = 1e6
-        model.addConstrs(lamda[arc.id] <= (M - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
+        # Primal-dual linearization
+        model.addConstrs(lamda[arc.id] <= (max_follower_value - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader")
 
         # Alpha-beta relationship
         model.addConstrs(alpha[arc.id] <= gp.quicksum(beta[arc.id, i] for i in interaction_rows) for arc in arcs if arc.player == "leader")
