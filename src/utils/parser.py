@@ -42,11 +42,50 @@ class Parser:
                 data[key].append(int(float(value)))
 
         return data
+    
+    def load_aux_file_new_format(self, file_name):
+        aux_file = "instances/{}.aux".format(file_name)
+        with open(aux_file, "r") as aux_file:
+            data = {
+                "N": list(),
+                "M": list(),
+                "LC": list(),  # LL vars
+                "LR": list(),  # LL constrs
+                "LO": list(),  # LL ObjFunc coeffs
+                "OS": [1]  # opt sense
+            }
+            lines = [line for line in aux_file.read().splitlines()]
+            for idx, line in enumerate(lines):
+                if line == "@NUMVARS":
+                    data["N"] = int(lines[idx + 1])
+                elif line == "@NUMCONSTRS":
+                    data["M"] = int(lines[idx + 1])
+                elif line == "@VARSBEGIN":
+                    for j in range(1, data["N"] + 1):
+                        try:
+                            col = int(lines[idx + j].split("  ")[0].replace("C", "").replace("0", ""))
+                        except:
+                            col = 0
+                        obj_func_coeff = float(lines[idx + j].split("  ")[1])
+                        data["LC"].append(col)
+                        data["LO"].append(obj_func_coeff)
+                elif line == "@CONSTRSBEGIN":
+                    for i in range(1, data["M"] + 1):
+                        try:
+                            row = int(lines[idx + i].split("  ")[0].replace("R", "").replace("0", ""))
+                        except:
+                            row = 0
+                        data["LR"].append(row)
+
+        return data
 
     def build_instance(self, file_name):
         t0 = time()
         mps_file = self.load_mps_file(file_name)
-        aux_file = self.load_aux_file(file_name)
+        try:
+            aux_file = self.load_aux_file(file_name)
+        except: 
+            aux_file = self.load_aux_file_new_format(file_name)
         Lrows = [i for i in range(len(mps_file["constrs"])) if i not in aux_file["LR"]]
         Frows = aux_file["LR"]
         Lcols = [i for i in range(len(mps_file["obj"])) if i not in aux_file["LC"]]
@@ -54,8 +93,8 @@ class Parser:
 
         A = np.array([]) if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
         B = np.array([]) if not Lrows else mps_file["constrs"][Lrows[0]:Lrows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
-        C = mps_file["constrs"][Frows[0]:Frows[-1] + 1, Lcols[0]:Lcols[-1] + 1]
-        D = mps_file["constrs"][Frows[0]:Frows[-1] + 1, Fcols[0]:Fcols[-1] + 1]
+        C = mps_file["constrs"][np.ix_(Frows, Lcols)]
+        D = mps_file["constrs"][np.ix_(Frows, Fcols)]
         a = np.array([]) if not Lrows else mps_file["rhs"][Lrows[0]:Lrows[-1] + 1]
         b = mps_file["rhs"][Frows[0]:Frows[-1] + 1]
         Lsense = np.array([]) if not Lrows else mps_file["sense"][Lrows[0]:Lrows[-1] + 1]
@@ -93,8 +132,8 @@ class Parser:
             "D": D,
             "a": a,
             "b": b,
-            "c_leader": mps_file["obj"][Lcols[0]:Lcols[-1] + 1],
-            "c_follower": mps_file["obj"][Fcols[0]:Fcols[-1] + 1],
+            "c_leader": mps_file["obj"][Lcols],
+            "c_follower": mps_file["obj"][Fcols],
             "d": np.array([i for i in aux_file["LO"]]),
         }
 
