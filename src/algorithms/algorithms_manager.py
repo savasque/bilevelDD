@@ -340,7 +340,7 @@ class AlgorithmsManager:
                 model.Params.TimeLimit = max(time_limit - model_building_runtime, 0)
                 model.Params.Threads = self.num_threads
                 # model.Params.NumericFocus = 1
-                # model.Params.MIPGap = 1e-8
+                model.Params.MIPGap = 1e-8
                 model.optimize(lambda model, where: callback_func(model, where))
                 self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
                     model.objBound if model.MIPGap > 1e-6 else model.ObjVal, model.MIPGap, round(model.runtime)
@@ -365,7 +365,7 @@ class AlgorithmsManager:
                 # Solve DD reformulation
                 model.parameters.timelimit = max(time_limit - model_building_runtime, 0)
                 model.parameters.threads = self.num_threads
-                # model.parameters.mip.tolerances.mipgap = 1e-8
+                model.parameters.mip.tolerances.mipgap = 1e-8
                 model.solve(clean_before_solve=True)
                 self.logger.info("DD reformulation succesfully solved -> LB: {} - MIPGap: {} - Time elapsed: {} s".format(
                     model.solve_details.best_bound if model.solve_details.gap > 1e-6 else model.objective_value, model.solve_details.gap, round(model.solve_details.time)
