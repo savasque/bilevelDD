@@ -527,7 +527,7 @@ class AlgorithmsManager:
             )  
 
             # Value-function bound
-            M = self.max_follower_value
+            M = self.max_follower_value - result["follower_value"]
             model.add_constraint_(model.sum(instance.d[j] * model._vars["y"][j] for j in range(instance.Fcols)) <= result["follower_value"] + M * (1 - alpha))
 
         return time() - t0
