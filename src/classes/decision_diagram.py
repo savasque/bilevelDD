@@ -1,23 +1,24 @@
 class DecisionDiagram:
-    def __init__(self, id):
-        self.id = id
-        self.nodes = list()  # list of nodes (Node)
-        self.arcs = list()  # {(Node.id, Node.id): Arc}
-        self.graph_map = dict()  # {hash_key: Node}: Hast table mapping hash_key (node.state + node.layer) to an instance of Node
-        self.max_width = None  # Max width allowed when compiling the DD
-        self.ordering_heuristic = None  # Variable ordering
-        self.compilation_method = None  # follower_leader | leader_follower | collect_Y | compressed_leader
-        self.var_order = None  # {position (int): Node}
-        self.compilation_runtime = 0  # Total time for retrieving the final DD
-        self.reduce_algorithm_runtime = 0  # Time elapsed during the reduction algorithm by Bryant (1986)
-        self.sampling_runtime = 0  # Time elapsed during sampling method
-        self.initial_width = 0  # DD width before executing the reduction algorithm
-        self.root_node = None
-        self.sink_node = None
+    def __init__(self, id, args):
+        self.id                         = id
+        self.encoding                   = args["encoding"]
+        self.max_width                  = args["max_width"]  # Max width allowed when compiling the DD
+        self.ordering_heuristic         = args["ordering_heuristic"]  # Variable ordering
+        self.reduce_method              = args["reduce_method"]
+        self.nodes                      = list()
+        self.arcs                       = list()
+        self.root_node                  = None
+        self.sink_node                  = None
+        self.graph_map                  = dict()  # {hash_key: Node}: Hast table mapping hash_key (node.state + node.layer) to an instance of Node
+        self.var_order                  = None  # {position (int): Node}
+        self.compilation_runtime        = 0  # Total time for retrieving the final DD
+        self.reduce_algorithm_runtime   = 0  # Time elapsed during reduction
+        self.sampling_runtime           = 0  # Time elapsed during sampling
+        self.initial_width              = 0  # DD width before reduction
 
     @property
     def node_count(self):
-        return len(self.nodes) - 2
+        return len(self.nodes)
 
     @property
     def arc_count(self):
@@ -29,14 +30,14 @@ class DecisionDiagram:
     
     @property
     def num_merges(self):
-        return len([node for node in self.nodes if node.id != "sink" and len(node.incoming_arcs) >= 2])
+        return len([node for node in self.nodes if node.id != -1 and len(node.incoming_arcs) >= 2])
     
     def add_node(self, node):
         self.graph_map[node.layer][node.hash_key] = node
         self.nodes.append(node)
-        if node.id == "root":
+        if node.id == 0:
             self.root_node = node
-        elif node.id == "sink":
+        elif node.id == -1:
             self.sink_node = node
 
     def add_arc(self, arc, update_in_outgoing_arcs=True):

@@ -6,15 +6,15 @@ from docplex.mp.callbacks.cb_mixin import ModelCallbackMixin
 
 from constants import BILEVEL_FREE_SET_SEP_TYPE
 
-from .formulations.cplex.follower_problem import get_model as get_follower_model
-from .formulations.cplex.aux_problem import get_model as get_aux_model
+from models.cplex.follower_problem import get_model as get_follower_model
+from models.cplex.aux_problem import get_model as get_aux_model
 
 class CplexCallback:
     def __init__(self, instance, model):
         self.num_cuts = 0
         self.instance = instance
-        self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
-        self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
+        self.follower_model = get_follower_model(instance)
+        self.aux_model = get_aux_model(instance)
         self.model = model
         self.use_lazy_cuts = False
         self.cuts_type = None

@@ -14,126 +14,28 @@ def run(args):
     # Parser instantiation
     parser = Parser()
 
-    file_name = "{}|w{}|{}".format(args.solver, args.max_width, args.approach)
+    # Load data
+    instance = parser.build_instance(args.instance_name, args.problem_type)
 
-    for discard_method in constants.DISCARD_METHOD:
-        for ordering_heuristic in constants.ORDERING_HEURISTIC: 
-            # Load data
-            instance = parser.build_instance(args.instance_name)
+    # Initiate AlgorithmsManager
+    algorithms_manager = AlgorithmsManager(instance, args.num_threads, args.mip_solver)
 
-            # Initiate AlgorithmsManager
-            algorithms_manager = AlgorithmsManager(instance, args.num_threads, args.solver)
-
-            if args.approach != "iterative":
-                ## One-time compilation approach
-                result = algorithms_manager.one_time_compilation_approach(
-                    args.max_width, ordering_heuristic, 
-                    discard_method, constants.SOLVER_TIME_LIMIT, args.approach
-                )
-
-            else:
-                ## Iterative approach
-                result = algorithms_manager.iterative_approach(
-                    args.max_width, ordering_heuristic, 
-                    discard_method, constants.SOLVER_TIME_LIMIT
-                )
-
-            # Remove solutions
-            del result["solution"]
-            del result["follower_response"]
-
-            # Write results
-            if args.approach != "write_model":
-                parser.write_results(result, file_name)
+    # Solve
+    algorithms_manager.solve(args)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--instance_name", "-i", type=str) 
-    parser.add_argument("--max_width", "-w", type=int, default=0)
-    parser.add_argument("--solver", "-s", type=str, default="gurobi")
-    parser.add_argument("--approach", "-a", type=str)  #lazy_cuts:no_good_cuts, lazy_cuts:INC, disjunctions, iterative, relaxation, write_model
-    parser.add_argument("--num_threads", "-t", type=int, default=0)
+    parser.add_argument("--instance_name", type=str)
+    parser.add_argument("--problem_type", type=str, default="general")  # general, bisp-kc
+    parser.add_argument("--time_limit", type=int, default=3600)  # in seconds
+    parser.add_argument("--dd_max_width", type=int, default=0)  # -1 for exact DD
+    parser.add_argument("--dd_encoding", type=str, default="compact")  # compact, extended
+    parser.add_argument("--dd_ordering_heuristic", type=str, default="lexicographic")  # min_fill, min_width, random
+    parser.add_argument("--dd_reduce_method", type=str, default="minmax_state")  # follower_cost, minmax_state, random
+    parser.add_argument("--approach", type=str, default="iterative")  # relaxation, iterative, lazy_cuts, disjunctions, write_model
+    parser.add_argument("--mip_solver", type=str, default="gurobi")  # gurobi, cplex
+    parser.add_argument("--num_threads", type=int, default=0)  # 0 for all available threads
     args = parser.parse_args()
-
-    # Testing
-    INSTANCES = [
-        "miplib/stein2710", 
-        "miplib/stein2750", 
-        "miplib/stein2790", 
-        "miplib/stein4510", 
-        "miplib/stein4550", 
-        "miplib/stein4590",
-        "miplib/enigma10",
-        "miplib/enigma50",
-        "miplib/enigma90",
-        "miplib/lseu10",
-        "miplib/lseu50",
-        "miplib/lseu90",
-        "miplib/p003310",
-        "miplib/p003350",
-        "miplib/p003390",
-        "miplib/p020110",
-        "miplib/p020150",
-        "miplib/p020190",
-        "miplib/p028210",
-        "miplib/p028250",
-        "miplib/p028290",
-        "miplib/p054810",
-        "miplib/p054850",
-        "miplib/p054890",
-        "miplib/p275610",
-        "miplib/p275650",
-        "miplib/p275690",
-        "miplib/l152lav10",
-        "miplib/l152lav50",
-        "miplib/l152lav90",
-        "miplib/mod01010",
-        "miplib/mod01050",
-        "miplib/mod01090",
-        "miplib/air0310",
-        "miplib/air0350",
-        "miplib/air0390",
-        "miplib/air0410",
-        "miplib/air0450",
-        "miplib/air0490",
-        "miplib/air0510",
-        "miplib/air0550",
-        "miplib/air0590",
-        "miplib/fast050710",
-        "miplib/fast050750",
-        "miplib/fast050790",
-        "miplib/cap600010",
-        "miplib/cap600050",
-        "miplib/cap600090",
-        "miplib/mitre10",
-        "miplib/mitre50",
-        "miplib/mitre90",
-        "miplib/nw0410",
-        "miplib/nw0450",
-        "miplib/nw0490",
-        "miplib/seymour10",
-        "miplib/seymour50",
-        "miplib/seymour90",
-        "miplib/harp210",
-        "miplib/harp250",
-        "miplib/harp290"
-    ]
-
-    # ## Testing
-    # args.solver = "gurobi"
-    # args.max_width = 25
-    # args.num_threads = 1
-
-    # # # args.approach = "relaxation"
-    # args.approach = "iterative"
-    # # # args.approach = "lazy_cuts:no_good_cuts"
-    # # args.approach = "lazy_cuts:INC"
-    # # # args.approach = "disjunctions"
-    
-    if not args.instance_name:
-        for instance in INSTANCES:
-            args.instance_name = instance
-            run(args)
-    else:    
-        run(args)
+  
+    run(args)

@@ -4,16 +4,16 @@ import gurobipy as gp
 
 from constants import BILEVEL_FREE_SET_SEP_TYPE
 
-from .formulations.gurobi.follower_problem import get_model as get_follower_model
-from .formulations.gurobi.aux_problem import get_model as get_aux_model
+from models.gurobi.follower_problem import get_model as get_follower_model
+from models.gurobi.aux_problem import get_model as get_aux_model
 
 
 class CallbackData:
     def __init__(self, instance, full_diagram=None):
         self.instance = instance
         self.full_diagram = full_diagram
-        self.follower_model = get_follower_model(instance, [0] * instance.Lcols)
-        self.aux_model = get_aux_model(instance, [0] * instance.Lcols, 0)
+        self.follower_model = get_follower_model(instance)
+        self.aux_model = get_aux_model(instance)
         self.follower_model.Params.OutputFlag = 0
         self.aux_model.Params.OutputFlag = 0
         self.root_node_bound = None

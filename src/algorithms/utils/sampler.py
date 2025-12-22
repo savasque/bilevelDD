@@ -44,14 +44,14 @@ class Sampler:
         model.Params.PoolSearchMode = 2  # Extra effort to find alternative optimal solutions
         model.Params.PoolSolutions = num_solutions
 
-        x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
-        y = model.addVars(instance.Fcols, vtype=gp.GRB.BINARY, name="y")
+        x = model.addVars(instance.nL, vtype=gp.GRB.BINARY, name="x")
+        y = model.addVars(instance.nF, vtype=gp.GRB.BINARY, name="y")
         t = model.addVar(lb=-gp.GRB.INFINITY, name="t")
-        tau = model.addVars(instance.Frows, lb=-gp.GRB.INFINITY, name="tau")
+        tau = model.addVars(instance.mF, lb=-gp.GRB.INFINITY, name="tau")
 
         # HPR constrs
-        model.addConstrs(instance.A[i] @ x.values() + instance.B[i] @ y.values() <= instance.a[i] for i in range(instance.Lrows))
-        model.addConstrs(instance.C[i] @ x.values() + instance.D[i] @ y.values() <= instance.b[i] for i in range(instance.Frows))
+        model.addConstrs(instance.A[i] @ x.values() + instance.B[i] @ y.values() <= instance.a[i] for i in range(instance.mL))
+        model.addConstrs(instance.C[i] @ x.values() + instance.D[i] @ y.values() <= instance.b[i] for i in range(instance.mF))
 
         # Avoid repeating solutions
         for x_2 in forbidden_X.values():
@@ -60,29 +60,29 @@ class Sampler:
             model.addConstr(self.hamming_distance(y, y_2) >= 1)
 
         # t and tau definitions
-        model.addConstrs(tau[i] >= instance.D[i] @ y.values() for i in range(instance.Frows))
-        model.addConstrs(t >= tau[i] for i in range(instance.Frows))
+        model.addConstrs(tau[i] >= instance.D[i] @ y.values() for i in range(instance.mF))
+        model.addConstrs(t >= tau[i] for i in range(instance.mF))
 
         # Get known optimal y-values (Fischetti et al, 2017)
         known_y_values = dict()
-        for j in range(instance.Fcols):
-            if np.all([instance.D[i][j] <= 0 for i in range(instance.Frows)]) and instance.d[j] < 0:
+        for j in range(instance.nF):
+            if np.all([instance.D[i][j] <= 0 for i in range(instance.mF)]) and instance.d[j] < 0:
                 known_y_values[j] = 1
-            elif np.all([instance.D[i][j] >= 0 for i in range(instance.Frows)]) and instance.d[j] > 0:
+            elif np.all([instance.D[i][j] >= 0 for i in range(instance.mF)]) and instance.d[j] > 0:
                 known_y_values[j] = 0
         model.addConstrs(y[j] == val for j, val in known_y_values.items())
 
         # Objective function
         if obj == "leader":
-            obj_func = instance.c_leader @ x.values() + instance.c_follower @ y.values()
+            obj_func = instance.cL @ x.values() + instance.cF @ y.values()
         elif obj == "follower":
-            obj_func = instance.c_leader @ x.values() + instance.d @ y.values()
+            obj_func = instance.cL @ x.values() + instance.d @ y.values()
         elif obj == "follower_only":
             obj_func = instance.d @ y.values()
         elif obj == "leader_feasibility":
-            obj_func = gp.quicksum((instance.D[i] @ y.values()) for i in range(instance.Frows))
+            obj_func = gp.quicksum((instance.D[i] @ y.values()) for i in range(instance.mF))
         elif obj == "other":
-            obj_func = t + .00001 * gp.quicksum(tau[i] for i in range(instance.Frows)) + .00001 * instance.d @ y.values()
+            obj_func = t + .00001 * gp.quicksum(tau[i] for i in range(instance.mF)) + .00001 * instance.d @ y.values()
         model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
 
         model.optimize()
@@ -93,8 +93,8 @@ class Sampler:
             for i in range(model.SolCount):
                 model.Params.solutionNumber = i
                 solution = model.getAttr("Xn")
-                x = [int(solution[j]) for j in range(instance.Lcols)]
-                y = [int(solution[j]) for j in range(instance.Lcols, instance.Lcols + instance.Fcols)]
+                x = [int(solution[j]) for j in range(instance.nL)]
+                y = [int(solution[j]) for j in range(instance.nL, instance.nL + instance.nF)]
                 X[str(x)] = x
                 Y[str(y)] = y
             
@@ -110,9 +110,9 @@ class Sampler:
         t0 = time()
         Y = dict()
 
-        Lcols = instance.Lcols
-        Fcols = instance.Fcols
-        Frows = instance.Frows
+        nL = instance.nL
+        nF = instance.nF
+        mF = instance.mF
         A = instance.A
         B = instance.B
         C = instance.C
@@ -123,8 +123,8 @@ class Sampler:
 
         model = gp.Model()
         model.Params.OutputFlag = 0
-        x = model.addMVar(Lcols, vtype=gp.GRB.BINARY, name="x")
-        y = model.addMVar(Fcols, vtype=gp.GRB.BINARY, name="y")
+        x = model.addMVar(nL, vtype=gp.GRB.BINARY, name="x")
+        y = model.addMVar(nF, vtype=gp.GRB.BINARY, name="y")
         
         # HPR constrs
         if A.shape[0] != 0 and B.shape[0] != 0:
@@ -140,7 +140,7 @@ class Sampler:
         
         # Objective function
         obj_func = d @ y
-        # obj_func = gp.quicksum(instance.D[i] @ list(y.values()) for i in range(instance.Frows))
+        # obj_func = gp.quicksum(instance.D[i] @ list(y.values()) for i in range(instance.mF))
         model.setObjective(obj_func, sense=gp.GRB.MINIMIZE)
         
         model.optimize()
@@ -166,13 +166,13 @@ class Sampler:
 
                 # Create new model with disjunction
                 new_model = model.copy()
-                x = np.array([new_model.getVarByName("x[{}]".format(j)) for j in range(Lcols)])
-                new_y = np.array([new_model.getVarByName("y[{}]".format(j)) for j in range(Fcols)])
-                z = new_model.addMVar(instance.Frows, vtype=gp.GRB.BINARY)
+                x = np.array([new_model.getVarByName("x[{}]".format(j)) for j in range(nL)])
+                new_y = np.array([new_model.getVarByName("y[{}]".format(j)) for j in range(nF)])
+                z = new_model.addMVar(instance.mF, vtype=gp.GRB.BINARY)
 
                 M = 1e6
-                new_model.addConstrs((C[i] @ x + D[i] @ y_value >= b[i] + 1 - M * (1 - z[i]) for i in range(Frows)))
-                new_model.addConstr(np.ones(Frows) @ z >= 1)
+                new_model.addConstrs((C[i] @ x + D[i] @ y_value >= b[i] + 1 - M * (1 - z[i]) for i in range(mF)))
+                new_model.addConstr(np.ones(mF) @ z >= 1)
 
                 for y_2 in Y.values():
                     new_model.addConstr(self.hamming_distance(new_y, y_2) >= 1)
@@ -183,9 +183,9 @@ class Sampler:
         # for y_value in Y.values():
         #     model = gp.Model()
         #     model.Params.OutputFlag = 0
-        #     x = model.addVars(instance.Lcols, vtype=gp.GRB.BINARY, name="x")
+        #     x = model.addVars(instance.nL, vtype=gp.GRB.BINARY, name="x")
         #     # HPR constrs
-        #     model.addConstrs((instance.C[i] @ x.values() + instance.D[i] @ y_value <= instance.b[i] for i in range(instance.Frows)), name="follower_constrs")
+        #     model.addConstrs((instance.C[i] @ x.values() + instance.D[i] @ y_value <= instance.b[i] for i in range(instance.mF)), name="follower_constrs")
         #     # Get known optimal y-values (Fischetti et al, 2017)
         #     model.addConstrs(y[j] == val for j, val in instance.known_y_values.items())
         #     # Objective function

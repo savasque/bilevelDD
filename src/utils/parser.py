@@ -1,11 +1,16 @@
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)  # To ignore Pandas warnings
 
-import gurobipy as gp
 import numpy as np
 import pandas as pd
 import logzero
 from time import time
+import json
+import matplotlib.pyplot as plt
+import networkx as nx
+from textwrap import dedent
+
+import gurobipy as gp
 
 from classes.instance import Instance
 
@@ -15,7 +20,7 @@ class Parser:
         self.logger = logzero.logger
 
     def load_mps_file(self, file_name):
-        file = "instances/{}.mps".format(file_name)
+        file = "{}.mps".format(file_name)
         model = gp.read(file)
         data = {
             "constrs": np.array(model.getA().todense()).astype(int),
@@ -27,7 +32,7 @@ class Parser:
         return data
 
     def load_aux_file(self, file_name):
-        aux_file = "instances/{}.aux".format(file_name)
+        aux_file = "{}.aux".format(file_name)
         with open(aux_file, "r") as aux_file:
             data = {
                 "N": list(),
@@ -43,49 +48,19 @@ class Parser:
 
         return data
     
-    def load_aux_file_new_format(self, file_name):
-        aux_file = "instances/{}.aux".format(file_name)
-        with open(aux_file, "r") as aux_file:
-            data = {
-                "N": list(),
-                "M": list(),
-                "LC": list(),  # LL vars
-                "LR": list(),  # LL constrs
-                "LO": list(),  # LL ObjFunc coeffs
-                "OS": [1]  # opt sense
-            }
-            lines = [line for line in aux_file.read().splitlines()]
-            for idx, line in enumerate(lines):
-                if line == "@NUMVARS":
-                    data["N"] = int(lines[idx + 1])
-                elif line == "@NUMCONSTRS":
-                    data["M"] = int(lines[idx + 1])
-                elif line == "@VARSBEGIN":
-                    for j in range(1, data["N"] + 1):
-                        try:
-                            col = int(lines[idx + j].split("  ")[0].replace("C", "").replace("0", ""))
-                        except:
-                            col = 0
-                        obj_func_coeff = float(lines[idx + j].split("  ")[1])
-                        data["LC"].append(col)
-                        data["LO"].append(obj_func_coeff)
-                elif line == "@CONSTRSBEGIN":
-                    for i in range(1, data["M"] + 1):
-                        try:
-                            row = int(lines[idx + i].split("  ")[0].replace("R", "").replace("0", ""))
-                        except:
-                            row = 0
-                        data["LR"].append(row)
+    def load_json_file(self, file_name):
+        file = "{}.json".format(file_name)
+        with open(file, "r") as file:
+            data = json.load(file)
 
         return data
 
-    def build_instance(self, file_name):
+    def build_instance(self, file_name, problem_type):
         t0 = time()
         mps_file = self.load_mps_file(file_name)
-        try:
-            aux_file = self.load_aux_file(file_name)
-        except: 
-            aux_file = self.load_aux_file_new_format(file_name)
+        aux_file = self.load_aux_file(file_name)
+        json_file = dict() if problem_type != "bisp-kc" else self.load_json_file(file_name)
+
         Lrows = [i for i in range(len(mps_file["constrs"])) if i not in aux_file["LR"]]
         Frows = aux_file["LR"]
         Lcols = [i for i in range(len(mps_file["obj"])) if i not in aux_file["LC"]]
@@ -120,30 +95,44 @@ class Parser:
                 D = np.vstack((D, -D[i]))
                 b = np.append(b, -b[i])
 
-        # Update Lrows and Frows
+        # Update leader and follower rows
         Lrows = [i for i in range(A.shape[0])]
         Frows = [i if not Lrows else Lrows[-1] + 1 + i for i in range(C.shape[0])]
 
+        # Build graph for BISP-KC instances
+        graph = None if problem_type != "bisp-kc" else nx.node_link_graph(json_file["nx_data"])
+
         data = {
             "id": file_name,
+            "problem_type": problem_type,
             "A": A,
             "B": B,
             "C": C,
             "D": D,
             "a": a,
             "b": b,
-            "c_leader": mps_file["obj"][Lcols],
-            "c_follower": mps_file["obj"][Fcols],
+            "cL": mps_file["obj"][Lcols],
+            "cF": mps_file["obj"][Fcols],
             "d": np.array([i for i in aux_file["LO"]]),
+            "nL": len(Lcols),
+            "mL": len(Lrows),
+            "nF": len(Fcols),
+            "mF": len(Frows),
+            "graph": graph,
+            "p": json_file.get("p")
         }
 
-        self.logger.info("Instance {} succesfully loaded -> LCols: {}, LRows: {}, FCols: {}, FRows: {}".format(
-            file_name,
-            len(Lcols),
-            len(Lrows),
-            len(Fcols),
-            len(Frows)
-        ))
+        self.logger.info(dedent(
+            """
+            Instance {} succesfully loaded:
+            Problem type        = {}
+            Leader columns      = {}
+            Leader rows         = {}
+            Follower columns    = {}
+            Follower rows       = {}"""
+        ).format(
+            file_name, problem_type, len(Lcols), len(Lrows), len(Fcols), len(Frows)
+        ).strip())
 
         instance = Instance(file_name, time() - t0, data)
 
@@ -158,10 +147,10 @@ class Parser:
                 instance.interaction[i] = "follower"
 
         # Compute known values (Fischetti et al, 2017)
-        for j in range(instance.Fcols):
-            if np.all([instance.D[i][j] <= 0 for i in range(instance.Frows)]) and instance.d[j] < 0:
+        for j in range(len(Fcols)):
+            if np.all([instance.D[i][j] <= 0 for i in range(len(Frows))]) and instance.d[j] < 0:
                 instance.known_y_values[j] = 1
-            elif np.all([instance.D[i][j] >= 0 for i in range(instance.Frows)]) and instance.d[j] > 0:
+            elif np.all([instance.D[i][j] >= 0 for i in range(len(Frows))]) and instance.d[j] > 0:
                 instance.known_y_values[j] = 0
 
         return instance
@@ -179,38 +168,22 @@ class Parser:
             new_result.to_excel("results/{}.xlsx".format(name))
     
     def plot_graph(self, instance, result):
-        import networkx as nx
-        import matplotlib.pyplot as plt
-        import json
-        from ast import literal_eval
-
-        with open("instances/{}.json".format(instance.name), "r") as file:
-            data = json.load(file)
-            edge_map = {literal_eval(key): value for key, value in data["edge_map"].items()}
-        
-        graph = nx.Graph()
-        for u in range(len(result["vars"]["y"])):
-            graph.add_node(u)
-        fixed_edges = [(i, j) for i in range(len(graph.nodes) - 1) for j in range(i + 1, len(graph.nodes)) if (i, j) not in edge_map]
-        for u, v in fixed_edges:
-            graph.add_edge(u, v, color="k")
-        edge_map = {value: key for key, value in edge_map.items()}
+        edge_map = {value: key for key, value in instance.edge_map.items()}
         selected_egdes = [edge_map[idx] for idx, u in enumerate(result["vars"]["x"]) if u == 1]
+        for e in instance.graph.edges:
+            instance.graph.edges[e]["color"] = "black"
         for u, v in selected_egdes:
-            graph.add_edge(u, v, color="r")
+            instance.graph.add_edge(u, v, color="red")
         
-        pos = nx.circular_layout(graph)
+        pos = nx.circular_layout(instance.graph)
         options = {
-            "node_color": ["k" if u == 0 else "green" for u in result["vars"]["y"]], 
-            "edge_color": [graph[u][v]["color"] for u, v in graph.edges]
+            "node_color": ["black" if u == 0 else "green" for u in result["opt_y"]], 
+            "edge_color": [instance.graph.edges[e]["color"] for e in instance.graph.edges],
+            "node_size": 800
         }
-        plt.title("{} - Fixed edges: {} - Budget: {}".format(instance.name, data["fixed_edges"], data["leader_budget"]))
-        nx.draw(graph, pos, **options)
+        labels = {v: "{}:{}".format(v, instance.d[v]) for v in range(len(instance.graph.nodes))}
+        nx.draw_networkx_labels(instance.graph, pos, labels, font_size=10, font_color="whitesmoke")
+
+        plt.title("{} - Fixed edges: {} - Budget: {}".format(instance.name, len(instance.graph.edges), instance.a[0]))
+        nx.draw(instance.graph, pos, **options)
         plt.show()
-
-
-if __name__ == "__main__":
-    import sys
-    sys.path.append("/home/savasquez/research/bilevelDD/")
-    parser = Parser()
-    instance = parser.build_instance("20_1_25_1")

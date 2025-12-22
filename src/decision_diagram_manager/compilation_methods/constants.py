@@ -1,1 +1,0 @@
-MAX_NODE_COUNT = float("inf")
