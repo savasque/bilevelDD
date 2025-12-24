@@ -7,8 +7,9 @@ def get_model(instance):
     model._vars = {"y": y}
 
     model._constrs = {
-        "follower_constrs": model.addConstr(instance.D @ y <= 0),
-        "vf_bound": model.addConstr(instance.d @ y <= 0)
+        "leader_constrs": model.addConstr(instance.B @ y <= float("inf")),
+        "follower_constrs": model.addConstr(instance.D @ y <= float("inf")),
+        "vf_bound": model.addConstr(instance.d @ y <= float("inf")),
     }
     
     model.setObjective(instance.cF @ y)

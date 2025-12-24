@@ -9,7 +9,7 @@ def get_model(instance):
     model._constrs = {
         "follower_constrs": {
             i: model.add_constraint(
-                model.sum(instance.D[i][j] * y[j] for j in range(instance.mF))
+                model.sum(instance.D[i][j] * y[j] for j in range(instance.nF))
                 <= 0
             )
             for i in range(instance.mF)

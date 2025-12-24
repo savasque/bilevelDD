@@ -9,8 +9,6 @@ import cplex
 
 from constants import RESULT_TEMPLATE
 
-from classes.decision_diagram import DecisionDiagram
-
 from decision_diagram_compiler.decision_diagram_compiler import DDCompiler
 
 from models.gurobi.DD_reformulation_compact import get_model as get_gurobi_DDref_compact
@@ -60,6 +58,7 @@ class AlgorithmsManager:
         instance    = self.instance
         time_limit  = args.time_limit
         dd_args     = {
+            "problem_setting": args.problem_setting,
             "max_width": float("inf") if args.dd_max_width == -1 else args.dd_max_width,
             "encoding": args.dd_encoding,
             "ordering_heuristic": args.dd_ordering_heuristic,
@@ -87,7 +86,7 @@ class AlgorithmsManager:
         self.hpr_model.optimize()
         x_sol = self.hpr_model._vars["x"].X
         if self.hpr_model.status == 2:
-            follower_response, _, opt = self.get_follower_response(x_sol, max(time_limit - (time() - t0), 0))
+            follower_response, _, _ = self.get_follower_response(x_sol, max(time_limit - (time() - t0), 0))
             lb = max(self.hpr_model.ObjVal, lb)
             result["lower_bound"] = lb
             if self.check_leader_feasibility(x_sol, follower_response):
@@ -100,15 +99,11 @@ class AlgorithmsManager:
         
         if gap > 1e-6:
             # Get DD relaxation
-            model = self.get_DD_reformulation(diagram, incumbent)
+            model = self.get_DD_reformulation(diagram, args.problem_type, args.problem_setting, incumbent)
             if self.mip_solver == "gurobi":
                 model.Params.OutputFlag = 0
             elif self.mip_solver == "cplex":
                 model.parameters.mip.display.set(0)
-    
-            self.logger.info(
-                "Initial bounds -> LB = {}, UB = {}, Gap = {}%".format(lb, ub, gap)
-            )
 
             # Main algorithm
             while time() - t0 <= time_limit:
@@ -117,6 +112,9 @@ class AlgorithmsManager:
                 if self.mip_solver == "gurobi":
                     model.Params.TimeLimit = max(time_limit - (time() - t0), 0)
                     model.optimize(lambda model, where: model._cbfunc(model, where))
+                    if model.status == 3:
+                        self.logger.warning("Problem is infeasible!")
+                        break
                     x_sol = model._vars["x"].X
                     model_solve_time += model.runtime
                     lb = max(model.ObjBound, lb)
@@ -149,7 +147,7 @@ class AlgorithmsManager:
 
                 # Current solution is not bilevel feasible. Refine model
                 if follower_opt:
-                    cuts_time += self.add_DD_cuts(model, follower_response)
+                    cuts_time += self.add_DD_cuts(args.problem_setting, model, follower_response)
 
                 iter += 1
 
@@ -193,28 +191,31 @@ class AlgorithmsManager:
 
         return result
     
-    def get_DD_reformulation(self, diagram, incumbent=dict()):
+    def get_DD_reformulation(self, diagram, problem_type, problem_setting, incumbent=dict()):
         # Get model
-        if self.mip_solver == "gurobi":
-            if diagram.encoding == "compact":
-                model = get_gurobi_DDref_compact(
-                    self.instance, diagram, self.max_follower_value, incumbent
-                )
-            elif diagram.encoding == "extended":
-                model = get_gurobi_DDref_extended(
-                    self.instance, diagram, self.max_follower_value, incumbent
-                )
-        elif self.mip_solver == "cplex":
-            if diagram.encoding == "compact":
-                model = get_cplex_DDref_compact(
-                    self.instance, diagram, self.max_follower_value, incumbent
-                )
-            elif diagram.encoding == "extended":
-                raise NotImplementedError("Extended DD reformulation not implemented for CPLEX yet.")
+        if diagram != None:
+            if self.mip_solver == "gurobi":
+                if diagram.encoding == "compact":
+                    model = get_gurobi_DDref_compact(
+                        self.instance, diagram, self.max_follower_value, problem_type, incumbent
+                    )
+                elif diagram.encoding == "extended":
+                    model = get_gurobi_DDref_extended(
+                        self.instance, diagram, self.max_follower_value, problem_type, incumbent
+                    )
+            elif self.mip_solver == "cplex":
+                if diagram.encoding == "compact":
+                    model = get_cplex_DDref_compact(
+                        self.instance, diagram, self.max_follower_value, incumbent
+                    )
+                elif diagram.encoding == "extended":
+                    raise NotImplementedError("Extended DD reformulation not implemented for CPLEX yet.")
+        else:
+            model = get_gurobi_hpr_model(self.instance)
                 
         # Add DD cut associated to incumbent
         if incumbent:
-            model._build_time += self.add_DD_cuts(model, incumbent["y"])
+            model._build_time += self.add_DD_cuts(problem_setting, model, incumbent["y"])
 
         if self.mip_solver == "gurobi":
             callback_data = GurobiCallbackData(self.instance)
@@ -250,6 +251,7 @@ class AlgorithmsManager:
                 follower_value = follower_model.ObjVal
                 follower_response = follower_model._vars["y"].X
                 # Solve aux model
+                self.aux_model._constrs["leader_constrs"].RHS = self.instance.a - self.instance.A @ x_sol
                 self.aux_model._constrs["follower_constrs"].RHS = self.instance.b - self.instance.C @ x_sol
                 self.aux_model._constrs["vf_bound"].RHS = follower_value + 1e-6
                 aux_model.Params.TimeLimit = max(0, time_limit)
@@ -284,7 +286,7 @@ class AlgorithmsManager:
 
         return follower_response, runtime, opt
     
-    def add_DD_cuts(self, model, y_sol):
+    def add_DD_cuts(self, problem_setting, model, y_sol):
         t0 = time()
         instance = self.instance
         interaction_rows = [i for i in range(instance.mF) if instance.interaction[i] == "both"]
@@ -300,7 +302,7 @@ class AlgorithmsManager:
             # Blocking definition
             M = {i: sum(min(instance.C[i][j], 0) for j in range(instance.nL)) for i in interaction_rows}
             model.addConstrs(
-                instance.C[i] @ model._vars["x"] >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ y_sol + 1) 
+                instance.C[i] @ model._vars["x"] >= M[i] + beta[i] * (-M[i] + instance.b[i] - instance.D[i] @ y_sol + 0.5) 
                 for i in interaction_rows
             )  
 
@@ -308,8 +310,17 @@ class AlgorithmsManager:
             M = self.max_follower_value - instance.d @ y_sol
             model.addConstr(instance.d @ model._vars["y"] <= instance.d @ y_sol + M * (1 - alpha))
 
-            # # Reset model
-            # model.reset()
+            if problem_setting == "pessimistic":
+                v = model.addVar(vtype=gp.GRB.BINARY)
+                model.addConstr(instance.d @ model._vars["y"] - 1e8 * v <= instance.d @ y_sol - 1)
+                model.addConstr(instance.cF @ model._vars["y"] >= instance.cF @ y_sol - 1e8 * (1 - alpha) - 1e8 * (1 - v))
+                model.addConstrs(
+                    instance.A[i] @ model._vars["x"] + instance.B[i] @ y_sol <= instance.a[i] + 1e8 * (1 - alpha) + 1e8 * (1 - v)
+                    for i in interaction_rows
+                ) 
+
+            # Reset model
+            model.reset()
 
         elif self.mip_solver == "cplex":
             alpha = model.binary_var()

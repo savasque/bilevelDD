@@ -27,15 +27,16 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--instance_name", type=str)
-    parser.add_argument("--problem_type", type=str, default="general")  # general, bisp-kc
-    parser.add_argument("--time_limit", type=int, default=3600)  # in seconds
-    parser.add_argument("--dd_max_width", type=int, default=0)  # -1 for exact DD
-    parser.add_argument("--dd_encoding", type=str, default="compact")  # compact, extended
-    parser.add_argument("--dd_ordering_heuristic", type=str, default="lexicographic")  # min_fill, min_width, random
-    parser.add_argument("--dd_reduce_method", type=str, default="minmax_state")  # follower_cost, minmax_state, random
-    parser.add_argument("--approach", type=str, default="iterative")  # relaxation, iterative, lazy_cuts, disjunctions, write_model
-    parser.add_argument("--mip_solver", type=str, default="gurobi")  # gurobi, cplex
-    parser.add_argument("--num_threads", type=int, default=0)  # 0 for all available threads
+    parser.add_argument("--problem_type", type=str, default="general")  # general | bisp-kc
+    parser.add_argument("--problem_setting", type=str, default="optimistic")  # optimistic | pessimistic
+    parser.add_argument("--time_limit", type=int, default=3600)  # nonnegative integer (in seconds)
+    parser.add_argument("--dd_max_width", type=int, default=0)  # integer >= -1 (-1 for exact DD)
+    parser.add_argument("--dd_encoding", type=str, default="compact")  # compact | extended
+    parser.add_argument("--dd_ordering_heuristic", type=str, default="lexicographic")  # lexicographic | 
+    parser.add_argument("--dd_reduce_method", type=str, default="minmax_state")  # follower_cost | minmax_state | random
+    parser.add_argument("--approach", type=str, default="iterative")  # iterative
+    parser.add_argument("--mip_solver", type=str, default="gurobi")  # gurobi | cplex
+    parser.add_argument("--num_threads", type=int, default=0)  # nonnegative integer (0 for all available threads)
     args = parser.parse_args()
   
     run(args)

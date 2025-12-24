@@ -6,7 +6,7 @@ import numpy as np
 from constants import SAMPLING_METHOD
 
 from .compilers.general_compiler import GenaralCompiler
-from .compilers.bisp_kc_compiler import BISPCompiler
+from .compilers.bisp_kc_compiler_optimistic import BISPOptimisticCompiler
 
 from algorithms.utils.sampler import Sampler
 
@@ -38,6 +38,6 @@ class DDCompiler:
             if instance.problem_type == "general":
                 compiler = GenaralCompiler(self.logger)
             elif instance.problem_type == "bisp-kc":    
-                compiler = BISPCompiler(self.logger)
+                compiler = BISPOptimisticCompiler(self.logger)
 
             return compiler.compile(instance, args)

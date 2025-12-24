@@ -1,23 +1,20 @@
 import numpy as np
 
 class Node:
-    def __init__(self, id, layer, state=np.zeros(1), type=None):
-        self.id = id
-        self.state = state
-        self.layer = layer
-        self.outgoing_arcs = list()
-        self.incoming_arcs = list()
-        self.leader_cost = 0
-        self.follower_cost = 0
-        self.type = type
+    def __init__(self, id, layer, state=np.array([None]), follower_cost=None, leader_cost=None, type=None):
+        self.id             = id
+        self.state          = state
+        self.layer          = layer
+        self.outgoing_arcs  = list()
+        self.incoming_arcs  = list()
+        self.follower_cost  = follower_cost
+        self.leader_cost    = leader_cost
+        self.type           = type
     
     @property
     def hash_key(self):
         return "{}-{}".format(
-            np.array2string(
-                self.state,
-                formatter={"float_kind": lambda x: "0" if x == 0 else f"{x:g}"},
-            ).replace("\n", ""),
+            self.state.tobytes(),
             self.layer
         )
     

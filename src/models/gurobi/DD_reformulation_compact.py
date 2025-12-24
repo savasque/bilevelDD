@@ -2,7 +2,8 @@ from time import time
 import gurobipy as gp
 import numpy as np
 
-def get_model(instance, diagram, max_follower_value, incumbent=None):
+def get_model(instance, diagram, max_follower_value, problem_type, incumbent=None):
+    t0 = time()
     nL = instance.nL
     mL = instance.mL
     nF = instance.nF
@@ -15,8 +16,7 @@ def get_model(instance, diagram, max_follower_value, incumbent=None):
     cL = instance.cL
     cF = instance.cF
     d = instance.d
-
-    t0 = time()
+    
     model = gp.Model()
 
     x = model.addMVar(nL, vtype=gp.GRB.BINARY, name="x")
@@ -37,6 +37,9 @@ def get_model(instance, diagram, max_follower_value, incumbent=None):
     if mL > 0:
         model.addConstr(A @ x + B @ y <= a, name="LeaderHPR")
     model.addConstr(C @ x + D @ y <= b, name="FollowerHPR")
+
+    # Strengthening (Fischetti et al, 2017)
+    model.addConstrs((y[j] == val for j, val in instance.known_y_values.items()), name="pre-processing")
 
     # Objective function
     model.setObjective(cL @ x + cF @ y)
@@ -72,12 +75,12 @@ def get_model(instance, diagram, max_follower_value, incumbent=None):
         # Dual feasibility
         model.addConstrs((
             pi[arc.tail.id] - pi[arc.head.id] 
-            <= arc.cost for arc in arcs if arc.player in ["follower", "dummy"]), 
+            <= arc.follower_cost for arc in arcs if arc.player == "follower"), 
             name="DualFeas0"
         )
         model.addConstrs((
             pi[arc.tail.id] - pi[arc.head.id] - lamda[arc.id] 
-            <= arc.cost for arc in arcs if arc.player == "leader"), 
+            <= 0 for arc in arcs if arc.player == "leader"), 
             name="DualFeas1"
         )
         
@@ -102,13 +105,16 @@ def get_model(instance, diagram, max_follower_value, incumbent=None):
 
         # Blocking definition
         M = {i: sum(min(C[i][j], 0) for j in range(nL)) for i in interaction_rows}
-        model.addConstrs(
-            C[i] @ x >= M[i] + beta[arc.id, i] * (-M[i] + instance.b[i] - arc.tail.state[i] + 1) 
-            for arc in arcs for i in interaction_rows if arc.player == "leader"
-        )
-
-        # Strengthening (Fischetti et al, 2017)
-        model.addConstrs((y[j] == val for j, val in instance.known_y_values.items()), name="pre-processing")
+        if problem_type == "general":
+            model.addConstrs(
+                C[i] @ x >= M[i] + beta[arc.id, i] * (-M[i] + instance.b[i] - arc.tail.state[i] + 1) 
+                for arc in arcs for i in interaction_rows if arc.player == "leader"
+            )
+        elif problem_type == "bisp-kc":
+            model.addConstrs(
+                C[i] @ x >= M[i] + beta[arc.id, i] * (-M[i] + instance.b[i] - arc.tail.state[-1:][i] + 1) 
+                for arc in arcs for i in interaction_rows if arc.player == "leader"
+            )
 
     model._build_time = time() - t0
 

@@ -5,6 +5,7 @@ class DecisionDiagram:
         self.max_width                  = args["max_width"]  # Max width allowed when compiling the DD
         self.ordering_heuristic         = args["ordering_heuristic"]  # Variable ordering
         self.reduce_method              = args["reduce_method"]
+        self.problem_setting            = args["problem_setting"]   # Optimistic or pessimistic 
         self.nodes                      = list()
         self.arcs                       = list()
         self.root_node                  = None

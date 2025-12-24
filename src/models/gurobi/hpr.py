@@ -1,6 +1,10 @@
+from time import time
+
 import gurobipy as gp
 
 def get_model(instance):
+    t0 = time()
+
     model = gp.Model()
 
     x = model.addMVar(instance.nL, vtype=gp.GRB.BINARY, name="x")
@@ -14,5 +18,7 @@ def get_model(instance):
     model.setObjective(instance.cL @ x + instance.cF @ y)
 
     model.update()
+
+    model._build_time = time() - t0
 
     return model

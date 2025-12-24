@@ -2,7 +2,6 @@ from time import time
 from docplex.mp.model import Model
 import numpy as np
 
-from algorithms.utils.solve_HPR_gurobi import solve as solve_HPR
 
 def get_model(instance, diagram, max_follower_value, incumbent):
     nL = instance.nL
@@ -39,12 +38,8 @@ def get_model(instance, diagram, max_follower_value, incumbent):
     }
 
     # HPR constrs
-    if A.shape[0] != 0 and B.shape[0] != 0:
+    if mL > 0:
         model.add_constraints_((model.sum(A[i][j] * x[j] for j in range(nL)) + model.sum(B[i][j] * y[j] for j in range(nF)) <= a[i] for i in range(mL)), names="HPR-leader")
-    elif A.shape[0] != 0:
-        model.add_constraints_((model.sum(A[i][j] * x[j] for j in range(nL)) <= a[i] for i in range(mL)), names="HPR-leader")
-    elif B.shape[0] != 0:
-        model.add_constraints_((model.sum(B[i][j] * y[j] for j in range(nF)) <= a[i] for i in range(mL)), names="HPR-leader")
     model.add_constraints_((model.sum(C[i][j] * x[j] for j in range(nL)) + model.sum(D[i][j] * y[j] for j in range(nF)) <= b[i] for i in range(mF)), names="HPR-follower")
 
     # Objective function
