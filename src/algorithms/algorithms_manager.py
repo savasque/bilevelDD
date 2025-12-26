@@ -16,6 +16,8 @@ from models.gurobi.DD_reformulation_extended import get_model as get_gurobi_DDre
 from models.gurobi.follower_problem import get_model as get_gurobi_follower_model
 from models.gurobi.aux_problem import get_model as get_gurobi_aux_model
 from models.gurobi.hpr import get_model as get_gurobi_hpr_model
+from models.gurobi.pessimistic_follower_problem import get_model as get_gurobi_pess_follower_model
+from models.gurobi.pessimistic_blocking_problem import get_model as get_gurobi_pess_blocking_model
 from models.cplex.DD_reformulation_compact import get_model as get_cplex_DDref_compact
 from models.cplex.follower_problem import get_model as get_cplex_follower_model
 from models.cplex.aux_problem import get_model as get_cplex_aux_model
@@ -28,7 +30,7 @@ from .utils.get_max_follower_value import get_max_follower_value
 
 
 class AlgorithmsManager:
-    def __init__(self, instance, num_threads, mip_solver):
+    def __init__(self, instance, num_threads, mip_solver, problem_setting):
         self.logger = logzero.logger
         self.instance = instance
         self.mip_solver = mip_solver
@@ -43,6 +45,13 @@ class AlgorithmsManager:
             self.follower_model.Params.Threads = num_threads
             self.aux_model.Params.Threads = num_threads
             self.hpr_model.Params.Threads = num_threads
+            if problem_setting == "pessimistic":
+                self.pess_follower_model = get_gurobi_pess_follower_model(instance)
+                self.pess_blocking_model = get_gurobi_pess_blocking_model(instance)
+                self.pess_follower_model.Params.OutputFlag = 0
+                self.pess_blocking_model.Params.OutputFlag = 0
+                self.pess_follower_model.Params.Threads = num_threads
+                self.pess_blocking_model.Params.Threads = num_threads
         elif mip_solver == "cplex":
             self.follower_model = get_cplex_follower_model(instance)
             self.aux_model = get_cplex_aux_model(instance)
@@ -50,6 +59,9 @@ class AlgorithmsManager:
             self.aux_model.context.cplex_parameters.threads = num_threads
             self.follower_model.parameters.mip.display.set(0)
             self.aux_model.parameters.mip.display.set(0)
+            if problem_setting == "pessimistic":
+                raise NotImplementedError("Pessimistic version not implemented in CPLEX yet.")
+
         self.hpr_model = get_gurobi_hpr_model(instance)
         self.max_follower_value = get_max_follower_value(instance)
 
@@ -86,10 +98,10 @@ class AlgorithmsManager:
         self.hpr_model.optimize()
         x_sol = self.hpr_model._vars["x"].X
         if self.hpr_model.status == 2:
-            follower_response, _, _ = self.get_follower_response(x_sol, max(time_limit - (time() - t0), 0))
+            follower_response, _, follower_opt = self.get_follower_response(args.problem_setting, x_sol, max(time_limit - (time() - t0), 0))
             lb = max(self.hpr_model.ObjVal, lb)
             result["lower_bound"] = lb
-            if self.check_leader_feasibility(x_sol, follower_response):
+            if follower_opt and self.check_leader_feasibility(x_sol, follower_response):
                 ub = min(instance.cL @ x_sol + instance.cF @ follower_response, ub)
                 gap = 100 * round((ub - lb) / abs(ub + 1e-6), 6)
                 incumbent = {"x": x_sol, "y": follower_response}
@@ -127,7 +139,7 @@ class AlgorithmsManager:
 
                 # Get follower response
                 self.logger.debug("Computing follower response. Time elapsed = {}s".format(round(time() - t0)))
-                follower_response, follower_runtime, follower_opt = self.get_follower_response(x_sol, max(time_limit - (time() - t0), 0))
+                follower_response, follower_runtime, follower_opt = self.get_follower_response(args.problem_setting, x_sol, max(time_limit - (time() - t0), 0))
                 cuts_time += follower_runtime
 
                 # Update bounds
@@ -197,16 +209,17 @@ class AlgorithmsManager:
             if self.mip_solver == "gurobi":
                 if diagram.encoding == "compact":
                     model = get_gurobi_DDref_compact(
-                        self.instance, diagram, self.max_follower_value, problem_type, incumbent
+                        self.instance, diagram, self.max_follower_value, 
+                        problem_type, problem_setting, incumbent
                     )
                 elif diagram.encoding == "extended":
-                    model = get_gurobi_DDref_extended(
-                        self.instance, diagram, self.max_follower_value, problem_type, incumbent
-                    )
+                    raise NotImplementedError("Extended DD reformulation not implemented for Gurobi yet.")
+                
             elif self.mip_solver == "cplex":
                 if diagram.encoding == "compact":
                     model = get_cplex_DDref_compact(
-                        self.instance, diagram, self.max_follower_value, incumbent
+                        self.instance, diagram, self.max_follower_value, 
+                        problem_type, problem_setting, incumbent
                     )
                 elif diagram.encoding == "extended":
                     raise NotImplementedError("Extended DD reformulation not implemented for CPLEX yet.")
@@ -231,7 +244,7 @@ class AlgorithmsManager:
             
         return model
 
-    def get_follower_response(self, x_sol, time_limit):
+    def get_follower_response(self, problem_setting, x_sol, time_limit):
         t0 = time()
         follower_value = None
         follower_response = None
@@ -239,36 +252,64 @@ class AlgorithmsManager:
 
         follower_model = self.follower_model
         aux_model = self.aux_model
+        if problem_setting == "pessimistic":
+            pess_blocking_model = self.pess_blocking_model
+            pess_follower_model = self.pess_follower_model
 
         # Solve models
         if self.mip_solver == "gurobi":
             # Solve follower model
             follower_model._constrs.RHS = self.instance.b - self.instance.C @ x_sol
-            follower_model.Params.TimeLimit = max(0, time_limit)
+            follower_model.Params.TimeLimit = max(0, time_limit - (time() - t0))
             follower_model.optimize()
             if follower_model.status == 2:
-                opt = 1
                 follower_value = follower_model.ObjVal
-                follower_response = follower_model._vars["y"].X
-                # Solve aux model
-                self.aux_model._constrs["leader_constrs"].RHS = self.instance.a - self.instance.A @ x_sol
-                self.aux_model._constrs["follower_constrs"].RHS = self.instance.b - self.instance.C @ x_sol
-                self.aux_model._constrs["vf_bound"].RHS = follower_value + 1e-6
-                aux_model.Params.TimeLimit = max(0, time_limit)
-                aux_model.optimize()
-                if aux_model.status == 2:
-                    follower_response = aux_model._vars["y"].X
+                if problem_setting == "optimistic":
+                    opt = True
+                    follower_response = follower_model._vars["y"].X
+                    # Solve aux model
+                    self.aux_model._constrs["leader_constrs"].RHS = self.instance.a - self.instance.A @ x_sol
+                    self.aux_model._constrs["follower_constrs"].RHS = self.instance.b - self.instance.C @ x_sol
+                    self.aux_model._constrs["vf_bound"].RHS = follower_value + 1e-8
+                    aux_model.Params.TimeLimit = max(0, time_limit)
+                    aux_model.optimize()
+                    if aux_model.status == 2:
+                        follower_response = aux_model._vars["y"].X
+                elif problem_setting == "pessimistic":
+                    # Check if leader solution can be blocked by follower
+                    pess_blocking_model._constrs["follower_constrs"].RHS = self.instance.b - self.instance.C @ x_sol
+                    pess_blocking_model._constrs["vf_bound"].RHS = follower_value + 1e-8
+                    for i in range(self.instance.mL):
+                        pess_blocking_model._constrs["leader_blocking"][i].RHS = self.instance.a[i] - self.instance.A[i] @ x_sol + 1
+                    pess_blocking_model.Params.TimeLimit = max(0, time_limit - (time() - t0))
+                    pess_blocking_model.optimize()
+                    # Follower cannot block
+                    if pess_blocking_model.status not in [2, 9]:
+                        pess_follower_model._constrs["follower_constrs"].RHS = self.instance.b - self.instance.C @ x_sol
+                        pess_follower_model._constrs["vf_bound"].RHS = follower_value + 1e-8
+                        pess_follower_model.Params.TimeLimit = max(0, time_limit - (time() - t0))
+                        pess_follower_model.optimize()
+                        if pess_follower_model.status == 2:
+                            opt = True
+                            follower_response = pess_follower_model._vars["y"].X
+                    # Follower can block
+                    else:
+                        opt = True
+                        follower_response = pess_blocking_model._vars["y"].X
             
         elif self.mip_solver == "cplex":
+            if problem_setting == "pessimistic":
+                raise NotImplementedError("Pessimistic setting not implemented in CPLEX yet!")
+            
             # Solve follower model
             for i in range(self.instance.mF):
                 self.follower_model._constrs[i].rhs = float(self.instance.b[i] - self.instance.C[i] @ x_sol)
             follower_model.parameters.timelimit = max(0, time_limit - (time() - t0))
             follower_model.solve(clean_before_solve=True)
             try:
+                opt = True
                 follower_value = follower_model.objective_value
                 follower_response = np.array([round(follower_model._vars["y"][j].solution_value) for j in range(self.instance.nF)])
-                opt = 1
                 # Solve aux model
                 for i in range(self.instance.Frows):
                     self.aux_model._constrs["HPR"][i].rhs = float(self.instance.b[i] - self.instance.C[i] @ x_sol)
@@ -343,6 +384,9 @@ class AlgorithmsManager:
                 model.sum(instance.d[j] * model._vars["y"][j] for j in range(instance.nF)) 
                 <= instance.d @ y_sol + M * (1 - alpha)
             )
+
+            if problem_setting == "pessimistic":
+                raise NotImplementedError("Pessimistic cuts not implemented for CPLEX yet.")
 
         return time() - t0
 

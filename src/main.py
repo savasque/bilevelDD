@@ -18,7 +18,7 @@ def run(args):
     instance = parser.build_instance(args.instance_name, args.problem_type)
 
     # Initiate AlgorithmsManager
-    algorithms_manager = AlgorithmsManager(instance, args.num_threads, args.mip_solver)
+    algorithms_manager = AlgorithmsManager(instance, args.num_threads, args.mip_solver, args.problem_setting)
 
     # Solve
     algorithms_manager.solve(args)

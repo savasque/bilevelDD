@@ -5,8 +5,9 @@ import numpy as np
 
 from constants import SAMPLING_METHOD
 
-from .compilers.general_compiler import GenaralCompiler
+from .compilers.general_optimistic_compiler import GenaralOptimisticCompiler
 from .compilers.bisp_kc_compiler_optimistic import BISPOptimisticCompiler
+from .compilers.bisp_kc_compiler_pessimistic import BISPPessimisticCompiler
 
 from algorithms.utils.sampler import Sampler
 
@@ -35,9 +36,23 @@ class DDCompiler:
                 Reduce method       = {reduce_method}"""
             ).format(**args).strip())
 
-            if instance.problem_type == "general":
-                compiler = GenaralCompiler(self.logger)
-            elif instance.problem_type == "bisp-kc":    
-                compiler = BISPOptimisticCompiler(self.logger)
+            if args["problem_setting"] == "optimistic":
+                if instance.problem_type == "general":
+                    compiler = GenaralOptimisticCompiler(self.logger)
+                elif instance.problem_type == "bisp-kc":    
+                    compiler = BISPOptimisticCompiler(self.logger)
+            elif args["problem_setting"] == "pessimistic":
+                if instance.problem_type == "bisp-kc":
+                    compiler = BISPPessimisticCompiler(self.logger)
+                else:
+                    raise NotImplementedError(
+                        "Problem type {} and setting {} not implemented yet!".format(
+                            args["problem_type"], args["problem_setting"]
+                        )
+                    )
+            else:
+                raise ValueError(
+                    "Problem setting is not correct: {}".format(args["problem_setting"])
+                )
 
             return compiler.compile(instance, args)

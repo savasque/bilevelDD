@@ -8,7 +8,7 @@ from classes.arc import Arc
 from classes.decision_diagram import DecisionDiagram
 
 
-class BISPCompilerPessimistic:
+class BISPPessimisticCompiler:
     def __init__(self, logger):
         self.logger = logger
 
@@ -37,7 +37,13 @@ class BISPCompilerPessimistic:
         diagram = DecisionDiagram(0, args)
         diagram.var_order, diagram.ordering_heuristic_runtime = self.get_ordering_heuristic(instance, args["ordering_heuristic"])
         diagram.graph_map = graph_map
-        root_node = Node(0, 0, [list(diagram.var_order["follower"]), 0])
+        root_node = Node(
+            0, 
+            0, 
+            np.array(list(diagram.var_order["follower"]) + [0, 0]),  # State variable: Node list + FolObjVal + LHS
+            0,
+            0
+        )
         diagram.add_node(root_node)
         if args["encoding"] == "compact":
             sink_node = Node(-1, len(instance.graph.nodes) + 1)
@@ -68,18 +74,24 @@ class BISPCompilerPessimistic:
 
         var_idx_to_layer = {idx: layer for layer, idx in enumerate(diagram.var_order["follower"])}
 
-        # Queues of nodes
-        current_layer_queue = deque()
+        # Compute completion bounds for follower constrs
+        completion_bounds = self.initialize_follower_completion_bounds(instance)
 
         # Create follower layers
         for layer in range(instance.nF):
             var_index = diagram.var_order["follower"][layer]
-            for node in diagram.graph_map[layer].values():
-                    current_layer_queue.append(node)
-            
+            current_layer_queue = deque(diagram.graph_map[layer].values())
+
+            # Update completion bound
+            self.update_follower_completion_bounds(instance, completion_bounds, var_index)
+
             # Width limit
             if len(current_layer_queue) > diagram.max_width:
-                current_layer_queue = self.reduce_queue(instance, diagram.reduce_method, current_layer_queue, diagram.max_width)
+                current_layer_queue = self.reduce_queue(diagram.reduce_method, current_layer_queue, diagram.max_width)
+                # Empty and update graph map
+                diagram.graph_map[layer] = dict()
+                for node in current_layer_queue:
+                    diagram.graph_map[layer][node.hash_key] = node
 
             self.logger.debug("Follower layer {} -> Variable index = {}, Queue size = {}".format(
                 layer, var_index, len(current_layer_queue)
@@ -88,58 +100,47 @@ class BISPCompilerPessimistic:
             # Compile new layer
             while len(current_layer_queue):
                 node = current_layer_queue.popleft()
-                zero_head = self.create_follower_node(instance, layer + 1, var_index, node, 0, diagram.problem_setting)
-                one_head = self.create_follower_node(instance, layer + 1, var_index, node, 1, diagram.problem_setting)
-                zero_head_feasibility = self.check_completion_bounds(instance, completion_bounds, zero_head)\
-                                        and instance.known_y_values.get(var_index) != 1
-                one_head_feasibility = self.check_completion_bounds(instance, completion_bounds, one_head)\
-                                        and instance.known_y_values.get(var_index) != 0
+                zero_head = self.create_follower_node(instance, node, var_idx_to_layer, 0)
+                one_head = self.create_follower_node(instance, node, var_idx_to_layer, 1)
+                child_nodes = [
+                    (zero_head, self.check_completion_bounds(instance, completion_bounds, zero_head)),
+                    (one_head, self.check_completion_bounds(instance, completion_bounds, one_head))
+                ]
 
-                # Zero head
-                if zero_head_feasibility:
-                    zero_head.id = diagram.node_count + 1
-                    # Check if node was already created
-                    if zero_head.hash_key in diagram.graph_map[zero_head.layer]:
-                        found_node = diagram.graph_map[zero_head.layer][zero_head.hash_key]
-                        self.update_costs(node=found_node, new_node=zero_head)
-                        zero_head = found_node
-                        # Create arc if node was not already connected
-                        if node.hash_key not in diagram.graph_map[node.layer]:
-                            arc = Arc(tail=node, head=zero_head, value=0, cost=0, var_index=var_index, player="follower")
-                            diagram.add_arc(arc)
-                    else:
-                        diagram.add_node(zero_head)  # TODO: add nodes after reducing next_layer_queue
-                        # Create arc
-                        arc = Arc(tail=node, head=zero_head, value=0, cost=0, var_index=var_index, player="follower")
+                for child_node, feasibility in child_nodes:
+                    if feasibility:
+                        # Check if node was already created
+                        if child_node.hash_key in diagram.graph_map[child_node.layer]:
+                            new_node = diagram.graph_map[child_node.layer][child_node.hash_key]
+                            self.update_costs(new_node, child_node)
+                        else:
+                            new_node = child_node
+                            new_node.id = diagram.node_count
+                            diagram.add_node(child_node)
+
+                        arc = Arc(
+                            node, 
+                            new_node, 
+                            child_node.type, 
+                            instance.d[var_index] * child_node.type, 
+                            instance.cF[var_index] * child_node.type, 
+                            None, 
+                            "follower"
+                        )
                         diagram.add_arc(arc)
-                        next_layer_queue.append(zero_head)
-                
-                # One head
-                if one_head_feasibility:
-                    one_head.id = diagram.node_count + 1
-                    # Check if node was already created
-                    if one_head.hash_key in diagram.graph_map[one_head.layer]:
-                        found_node = diagram.graph_map[one_head.layer][one_head.hash_key]
-                        self.update_costs(node=found_node, new_node=one_head)
-                        one_head = found_node
-                        if node.hash_key not in diagram.graph_map[node.layer]:
-                            # Create arc if node was not already connected
-                            arc = Arc(tail=node, head=one_head, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
-                            diagram.add_arc(arc)
-                    else:
-                        diagram.add_node(one_head)  # TODO: add nodes after reducing next_layer_queue
-                        # Create arc
-                        arc = Arc(tail=node, head=one_head, value=1, cost=instance.d[var_index], var_index=var_index, player="follower")
-                        diagram.add_arc(arc)
-                        next_layer_queue.append(one_head)
 
-            # Width limit
-            if len(next_layer_queue) > diagram.max_width:
-                next_layer_queue = self.reduce_queue(instance, diagram.reduce_method, next_layer_queue, diagram.max_width)
+        # Width limit for last layer
+        current_layer_queue = deque(diagram.graph_map[instance.nF].values())
+        if len(current_layer_queue) > diagram.max_width:
+            current_layer_queue = self.reduce_queue(diagram.reduce_method, current_layer_queue, diagram.max_width)
+            # Empty and update graph map
+            diagram.graph_map[instance.nF] = dict()
+            for node in current_layer_queue:
+                diagram.graph_map[instance.nF][node.hash_key] = node
 
-            # Update queues
-            current_layer_queue = next_layer_queue
-            next_layer_queue = deque()
+        self.logger.debug("Follower layer {} -> Variable index = {}, Queue size = {}".format(
+            instance.nF, var_index, len(current_layer_queue)
+        ))
         
         # Compress follower layers
         if diagram.encoding == "compact":
@@ -150,22 +151,23 @@ class BISPCompilerPessimistic:
             root_node.outgoing_arcs = list()
             for node in current_layer_queue:
                 node.incoming_arcs = list()
-                arc = Arc(root_node, node, value=1, cost=node.follower_cost, var_index=None, player="follower")
+                arc = Arc(root_node, node, None, node.follower_cost, 0, None, "follower")
                 diagram.add_arc(arc)
 
     def compile_leader_layers(self, diagram, instance):
         self.logger.debug("Compiling leader layers")
 
+        current_layer_queue = deque([node for node in diagram.graph_map[instance.nF].values()])
+
         if diagram.encoding == "compact":
             # Compile compressed leader layer
-            current_layer_queue = deque(diagram.graph_map[instance.nF].values())
             while len(current_layer_queue):
                 node = current_layer_queue.popleft()
-                arc = Arc(tail=node, head=diagram.sink_node, value=0, cost=0, var_index=None, player="leader")
+                arc = Arc(node, diagram.sink_node, None, 0, 0, None, "leader")
                 diagram.add_arc(arc)
         
         elif diagram.encoding == "extended":
-            raise ValueError("Extended encoding for general instances not implemented yet.")
+            raise ValueError("Extended encoding for BISP-KC instances not implemented yet.")
 
     def get_ordering_heuristic(self, instance, ordering_heuristic):
         """
@@ -214,36 +216,39 @@ class BISPCompilerPessimistic:
 
         # Max-connected-degree
         elif ordering_heuristic == "max_connected_degree":
-            # Select follower variables with known value
-            order["follower"] = [j for j in instance.known_y_values]
-            remaining_columns = [j for j in range(instance.nF) if j not in instance.known_y_values]
+            self.logger.debug("Variable ordering heuristic: max-connected-degree")
+            columns = [j for j in range(instance.nF)]
 
-            # Select follower variable with more appearances in D together with the already included variables
-            degree_sequence = {j: 0 for j in remaining_columns}
-            for i in range(instance.mF):
-                for j in remaining_columns:
-                    if instance.D[i][j] != 0 and instance.interaction[i] == "follower": 
-                        degree_sequence[j] += 1
-                        for k in instance.known_y_values:
-                            if instance.D[i][k] != 0:
-                                degree_sequence[j] += 1
-            order["follower"].append(max(degree_sequence.items(), key=lambda x: x[1])[0])
-            remaining_columns = [i for i in range(instance.nF) if i != order["follower"][-1]]
+            # Select max degree node
+            max_degree = 0
+            for j in range(instance.nF):
+                degree = len(instance.graph.edges(j))
+                if degree > max_degree:
+                    node = j
+                    max_degree = degree
+            var_order = [columns.pop(node)]
 
-            # Select follower variable with the most appearances in D where the last column also appears
-            while remaining_columns:
-                degree_sequence = {j: [None, 0, 0] for j in remaining_columns}  # [idx, joint appearances, degree]
-                last_column = order["follower"][-1]
-                for i in range(instance.mF):
-                    for idx, j in enumerate(remaining_columns):
-                        degree_sequence[j][0] = idx
-                        if instance.D[i][j] != 0 and instance.interaction[i] == "follower":  # Only follower constrs
-                            degree_sequence[j][2] += 1  # Degree
-                            if instance.D[i][last_column] != 0:
-                                degree_sequence[j][1] += 1  # Joint appearance
-                column = max(degree_sequence.items(), key=lambda x: (x[1][1], x[1][2]))
-                order["follower"].append(column[0])
-                remaining_columns.pop(column[1][0])
+            # Select connected node with max degree
+            while columns:
+                max_total_degree = -float("inf")
+                max_degree = -float("inf")
+                node = None
+                node_idx = None
+                for idx, j in enumerate(columns):
+                    degree = len([v for v in var_order if instance.graph.has_edge(j, v)])
+                    total_degree = len(instance.graph.edges(j))
+                    if degree > max_degree:
+                        max_degree = degree
+                        max_total_degree = total_degree
+                        node = j
+                        node_idx = idx
+                    elif degree == max_degree and total_degree > max_total_degree:
+                        max_degree = degree
+                        max_total_degree = total_degree
+                        node = j
+                        node_idx = idx
+                var_order.append(columns.pop(node_idx))
+            order["follower"] = var_order
 
         else:
             raise ValueError("Invalid ordering heuristic value")
@@ -252,64 +257,102 @@ class BISPCompilerPessimistic:
 
         return order, time() - t0
     
-    def create_follower_node(self, instance, layer, var_index, parent_node, value, problem_setting):
-        if value == 0:
-            node = Node(None, layer, np.copy(parent_node.state), 0)
-            node.follower_cost = float(parent_node.follower_cost)
-            node.leader_cost = float(parent_node.leader_cost)
-        else:
-            node = Node(None, layer, parent_node.state + instance.D[:, var_index], 1)
-            node.follower_cost = parent_node.follower_cost + instance.d[var_index]
-            node.leader_cost = float(parent_node.leader_cost)
+    def initialize_follower_completion_bounds(self, instance):
+        completion_bounds = sum(min(0, instance.C[0][j]) for j in range(instance.nL))
+        completion_bounds += sum(min(0, instance.D[0][j]) for j in range(instance.nF))
+        
+        return completion_bounds
 
-        return node
+    def update_follower_completion_bounds(self, instance, completion_bounds, var_index):
+        completion_bounds -= min(0, instance.D[0, var_index])
+
+    def check_completion_bounds(self, instance, completion_bounds, node):
+        return node.state[-1] + completion_bounds <= instance.b[0]
+
+    def create_follower_node(self, instance, parent_node, var_idx_to_layer, value):
+        child_node = None
+        vertex = None
+        if parent_node.state.size > 1:
+            vertex = parent_node.state[:-2][0]
+            
+        # Node with follower value 1
+        if value == 1:
+            if vertex != None:
+                child_node_state = np.array([v for v in parent_node.state[1:-2] if not instance.graph.has_edge(vertex, v)])
+                if child_node_state.size > 0:
+                    child_node = Node(
+                        None, 
+                        var_idx_to_layer[child_node_state[0]], 
+                        np.append(
+                            child_node_state, 
+                            [
+                                parent_node.state[-2] + instance.d[vertex], 
+                                parent_node.state[-1] + instance.D[0][vertex]
+                            ]
+                        ), 
+                        parent_node.follower_cost + instance.d[vertex],
+                        parent_node.leader_cost + instance.cF[vertex],
+                        1
+                    )
+                else:
+                    child_node = Node(
+                        None, 
+                        len(instance.graph.nodes), 
+                        np.array(
+                            [
+                                parent_node.state[-2] + instance.d[vertex],
+                                parent_node.state[-1] + instance.D[0][vertex]
+                            ]
+                        ),
+                        parent_node.follower_cost + instance.d[vertex],
+                        parent_node.leader_cost + instance.cF[vertex],
+                        1
+                    )
+            else:
+                child_node = Node(None, parent_node.layer + 1)
+
+        # Node with follower value 0
+        else:
+            if vertex != None:
+                child_node_state = parent_node.state[1:-2]
+                if child_node_state.size > 0:
+                    child_node = Node(
+                        None, 
+                        var_idx_to_layer[child_node_state[0]], 
+                        np.append(child_node_state, parent_node.state[-2:]), 
+                        parent_node.follower_cost,
+                        parent_node.leader_cost,
+                        0
+                    )
+                else:
+                    child_node = Node(
+                        None, 
+                        len(instance.graph.nodes), 
+                        parent_node.state[-2:],
+                        parent_node.follower_cost,
+                        parent_node.leader_cost,
+                        0
+                    )
+                
+        return child_node
     
     def update_costs(self, node, new_node):
         node.follower_cost = min(node.follower_cost, new_node.follower_cost)
-        node.leader_cost = min(node.leader_cost, new_node.leader_cost)
+        node.leader_cost = max(node.leader_cost, new_node.leader_cost)
 
-    def reduce_queue(self, instance, reduce_method, queue, max_width):
-        def check_diversity_criterion(instance, nodes, new_node):
-            for node in nodes:
-                if blocking_distance(instance, new_node, node) <= 0:
-                    return False
-            
-            return True
-        
-        def blocking_distance(instance, node_1, node_2):
-            distance = 0
-            for i in range(instance.mF):
-                if instance.interaction[i] == "both":
-                    if node_1.state[i] < node_2.state[i]:
-                        distance += 1
-
-            return distance
-        
+    def reduce_queue(self, reduce_method, queue, max_width):
         if reduce_method == "follower_cost":
-            sorted_queue = deque(sorted(queue, key=lambda x: int(0.9 * x.follower_cost + 0.1 * x.leader_cost)))
-        elif reduce_method == "minmax_state":
-            sorted_queue = deque(sorted(queue, key=lambda x: (max(x.state - instance.b), sum(x.state), x.follower_cost)))
-        elif reduce_method == "random":
-            sorted_queue = queue
-            shuffle(sorted_queue)
-        elif reduce_method == "minsum_state":
-            sorted_queue = deque(sorted(queue, key=lambda x: sum(x.state), reverse=True))
+            reduced_queue = deque(sorted(queue, key=lambda x: x.follower_cost)[:max_width])
 
-        filtered_queue = deque()
-        remaining_nodes = deque()
+        elif reduce_method == "random":
+            sorted_queue = list(queue)
+            shuffle(sorted_queue)
+            reduced_queue = deque(sorted_queue[:max_width])
         
-        # Check diversity of the queue
-        for node in sorted_queue:
-            if check_diversity_criterion(instance, filtered_queue, node) and len(filtered_queue) < max_width:
-                filtered_queue.append(node)
-            else:
-                remaining_nodes.append(node)
+        else:
+            raise ValueError("Invalid ordering heuristic value")
         
-        # Replenish queue if too small
-        while len(filtered_queue) < max_width:
-            filtered_queue.append(remaining_nodes.popleft())
-        
-        return filtered_queue
+        return reduced_queue
     
     def clean_diagram(self, diagram):
         t0 = time()

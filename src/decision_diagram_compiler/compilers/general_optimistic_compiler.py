@@ -12,7 +12,7 @@ from classes.decision_diagram import DecisionDiagram
 from algorithms.utils.sampler import Sampler
 
 
-class GenaralCompiler:
+class GenaralOptimisticCompiler:
     def __init__(self, logger):
         self.logger = logger
 

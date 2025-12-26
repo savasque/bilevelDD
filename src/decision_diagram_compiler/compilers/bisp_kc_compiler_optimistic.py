@@ -283,7 +283,7 @@ class BISPOptimisticCompiler:
                     child_node = Node(
                         None, 
                         var_idx_to_layer[child_node_state[0]], 
-                        np.append(child_node_state, parent_node.state[-1:] + instance.D[0][vertex]), 
+                        np.append(child_node_state, parent_node.state[-1:] + instance.D[0][vertex]),  # Keep [-1:] to preserve data type (ndarray)
                         parent_node.follower_cost + instance.d[vertex],
                         parent_node.leader_cost + instance.cF[vertex],
                         1
@@ -292,7 +292,7 @@ class BISPOptimisticCompiler:
                     child_node = Node(
                         None, 
                         len(instance.graph.nodes), 
-                        parent_node.state[-1:] + instance.D[0][vertex],
+                        parent_node.state[-1:] + instance.D[0][vertex],  # Keep [-1:] to preserve data type (ndarray)
                         parent_node.follower_cost + instance.d[vertex],
                         parent_node.leader_cost + instance.cF[vertex],
                         1
@@ -308,7 +308,7 @@ class BISPOptimisticCompiler:
                     child_node = Node(
                         None, 
                         var_idx_to_layer[child_node_state[0]], 
-                        np.append(child_node_state, parent_node.state[-1]), 
+                        np.append(child_node_state, parent_node.state[-1:]),  # Keep [-1:] to preserve data type (ndarray)
                         parent_node.follower_cost,
                         parent_node.leader_cost,
                         0
@@ -317,7 +317,7 @@ class BISPOptimisticCompiler:
                     child_node = Node(
                         None, 
                         len(instance.graph.nodes), 
-                        parent_node.state[-1:],
+                        parent_node.state[-1:],  # Keep [-1:] to preserve data type (ndarray)
                         parent_node.follower_cost,
                         parent_node.leader_cost,
                         0
