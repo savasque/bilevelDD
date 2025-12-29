@@ -189,7 +189,7 @@ class GenaralOptimisticCompiler:
                     # Check if node was already created
                     if child_node.hash_key in diagram.graph_map[child_node.layer]:
                         found_node = diagram.graph_map[child_node.layer][child_node.hash_key]
-                        self.operations.update_costs(node=found_node, new_node=child_node)
+                        self.update_costs(node=found_node, new_node=child_node)
                         child_node = found_node
                         if node.hash_key not in diagram.graph_map[node.layer]:
                             # Create arc
@@ -212,7 +212,7 @@ class GenaralOptimisticCompiler:
                     # Check if node was already created
                     if child_node.hash_key in diagram.graph_map[child_node.layer]:
                         found_node = diagram.graph_map[child_node.layer][child_node.hash_key]
-                        self.operations.update_costs(node=found_node, new_node=child_node)
+                        self.update_costs(node=found_node, new_node=child_node)
                         child_node = found_node
                         if node.hash_key not in diagram.graph_map[node.layer]:
                             # Create arc
