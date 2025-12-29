@@ -85,13 +85,9 @@ def get_model(instance, diagram, max_follower_value, problem_type, problem_setti
         )
         model.addConstr(pi[sink_node.id] == 0, name="PiSink")
 
-        # Primal-dual linearization
-        model.addConstrs(
-            lamda[arc.id] 
-            <= (max_follower_value - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader"
-        )
-
         # Alpha-beta relationship
+        # alpha: 1 iff at least one follower constr is violated
+        # beta_{a, i}: 1 iff follower constr 'i' is violated via flow through 'a'
         model.addConstrs(
             alpha[arc.id] 
             <= gp.quicksum(beta[arc.id, i] for i in interaction_rows) for arc in arcs if arc.player == "leader"
@@ -100,8 +96,12 @@ def get_model(instance, diagram, max_follower_value, problem_type, problem_setti
             alpha[arc.id] 
             >= beta[arc.id, i] for i in interaction_rows for arc in arcs if arc.player == "leader"
         )
-
-        # Blocking definition
+        # Primal-dual linearization
+        model.addConstrs(
+            lamda[arc.id] 
+            <= (max_follower_value - arc.tail.follower_cost) * alpha[arc.id] for arc in arcs if arc.player == "leader"
+        )
+        # Blocking definition (beta_{a, i})
         M = {i: sum(min(C[i][j], 0) for j in range(nL)) for i in interaction_rows}
         if problem_type == "general":
             model.addConstrs(
@@ -131,6 +131,9 @@ def get_model(instance, diagram, max_follower_value, problem_type, problem_setti
         )
 
         # Pessimistic constraints (new DD)
+        # pi_u, lambda_a: same as in optimistic case, but for cF
+        # beta_a: dual variable for adjusting potential due to cF differences
+        # delta_a: arc capacity
         model.addConstrs((
             pi_pess[arc.tail.id] - pi_pess[arc.head.id] 
             >= arc.leader_cost 
@@ -151,7 +154,7 @@ def get_model(instance, diagram, max_follower_value, problem_type, problem_setti
             for arc in arcs if arc.player == "leader"
         )
 
-        # Delta definition
+        # Capacity definition (delta_a)
         model.addConstrs(
             beta_pess[arc.id] 
             <= 1e8 * delta_pess[arc.id]
@@ -160,11 +163,6 @@ def get_model(instance, diagram, max_follower_value, problem_type, problem_setti
         model.addConstrs(
             arc.tail.state[-2] 
             <= d @ y + 1e8 * delta_pess[arc.id]
-            for arc in arcs if arc.player == "leader"
-        )
-        model.addConstrs(
-            arc.tail.state[-2] 
-            >= instance.d @ y + 0.5 - 1e8 * (1 - delta_pess[arc.id]) 
             for arc in arcs if arc.player == "leader"
         )
 

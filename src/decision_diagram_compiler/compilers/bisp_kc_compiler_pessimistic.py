@@ -328,7 +328,7 @@ class BISPPessimisticCompiler:
                     child_node = Node(
                         None, 
                         len(instance.graph.nodes), 
-                        parent_node.state[-2:],
+                        np.copy(parent_node.state),
                         parent_node.follower_cost,
                         parent_node.leader_cost,
                         0

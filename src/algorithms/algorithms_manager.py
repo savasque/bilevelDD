@@ -352,11 +352,12 @@ class AlgorithmsManager:
             model.addConstr(instance.d @ model._vars["y"] <= instance.d @ y_sol + M * (1 - alpha))
 
             if problem_setting == "pessimistic":
+                M = 1e8
                 v = model.addVar(vtype=gp.GRB.BINARY)
-                model.addConstr(instance.d @ model._vars["y"] - 1e8 * v <= instance.d @ y_sol - 1)
-                model.addConstr(instance.cF @ model._vars["y"] >= instance.cF @ y_sol - 1e8 * (1 - alpha) - 1e8 * (1 - v))
+                model.addConstr(instance.d @ model._vars["y"] - M * v <= instance.d @ y_sol - 0.5)
+                model.addConstr(instance.cF @ model._vars["y"] >= instance.cF @ y_sol - M * (1 - alpha) - M * (1 - v))
                 model.addConstrs(
-                    instance.A[i] @ model._vars["x"] + instance.B[i] @ y_sol <= instance.a[i] + 1e8 * (1 - alpha) + 1e8 * (1 - v)
+                    instance.A[i] @ model._vars["x"] + instance.B[i] @ y_sol <= instance.a[i] + M * (1 - alpha) + M * (1 - v)
                     for i in interaction_rows
                 ) 
 
