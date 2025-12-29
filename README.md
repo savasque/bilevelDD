@@ -1,4 +1,4 @@
-# bilevelDD
+# BilevelDD
 
 Research code for decision-diagram-based reformulations and algorithms for binary bilevel optimization.
 
